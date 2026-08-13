@@ -17,12 +17,16 @@ export function appendMemoryEntry(memoryDir: string, entry: MemoryEntry): string
   let block = ''
   if (!existing.includes(`session:${entry.sessionId}`)) block += `\n## Session ${time}\n\n`
   block += `### ${time}\n`
-  block += `<!-- session:${entry.sessionId} turn:${entry.entryId} transcript:${entry.transcriptPath} -->\n`
+  block += `${formatSessionAnchor(entry)}\n`
   block += `${entry.content}\n\n`
 
   mkdirSync(memoryDir, { recursive: true })
   appendFileSync(file, block)
   return file
+}
+
+function formatSessionAnchor(entry: MemoryEntry): string {
+  return `<!-- session:${entry.sessionId} turn:${entry.entryId} transcript:${entry.transcriptPath} -->`
 }
 
 function formatDate(date: Date): string {
