@@ -1,0 +1,11 @@
+# node / typescript
+node_modules/
+dist/
+*.tsbuildinfo
+
+# env
+.env
+.env.*
+!.env.example
+
+*.log
