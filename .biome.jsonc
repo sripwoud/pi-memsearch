@@ -1,0 +1,45 @@
+{
+  "root": false,
+  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+  // format with dprint
+  "formatter": {
+    "enabled": false,
+  },
+  "json": {
+    "parser": {
+      "allowComments": true,
+      "allowTrailingCommas": true,
+    },
+  },
+  "linter": {
+    "enabled": true,
+    "includes": ["**"],
+    "rules": {
+      "complexity": {
+        "useLiteralKeys": "off",
+      },
+      "recommended": true,
+      "style": {
+        "noParameterAssign": "error",
+        "useAsConstAssertion": "error",
+        "useDefaultParameterLast": "error",
+        "useEnumInitializers": "error",
+        "useSelfClosingElements": "error",
+        "useSingleVarDeclarator": "error",
+        "noUnusedTemplateLiteral": "error",
+        "useNumberNamespace": "error",
+        "noInferrableTypes": "error",
+        "noUselessElse": "error",
+      },
+    },
+  },
+  // organize imports with dprint
+  "assist": {
+    "actions": { "source": { "organizeImports": "off", "useSortedAttributes": "on", "useSortedProperties": "on" } },
+  },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true,
+  },
+}

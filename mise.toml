@@ -1,0 +1,32 @@
+[tasks.setup]
+description = "Install node deps and git hooks"
+run = ["npm install", "hk install"]
+
+[tasks.check]
+alias = "c"
+description = "Lint, format and typecheck the whole repo"
+run = "hk check --all"
+
+[tasks.fix]
+alias = "f"
+description = "Apply lint and format fixes to the whole repo"
+run = "hk fix --all"
+
+[tasks.test]
+alias = "t"
+description = "Run the tests"
+run = "node --test 'test/**/*.test.ts'"
+
+[tasks.dev]
+alias = "d"
+description = "Run pi with the local extension loaded"
+run = "pi -e ./extensions/memsearch.ts"
+
+[tools]
+"cargo:convco" = "latest"
+dprint = "latest"
+hk = "1.47.0"
+node = "22"
+"npm:@biomejs/biome" = "latest"
+"npm:typescript" = "latest"
+pkl = "latest"
