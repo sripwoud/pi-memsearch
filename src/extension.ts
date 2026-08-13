@@ -17,13 +17,21 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       description:
         'Persist a memory to the shared project memory store, immediately. Use when the user asks to remember something, or when a decision, fix, or fact should survive this session.',
       execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+        const entryId = ctx.sessionManager.getLeafId()
+        const transcriptPath = ctx.sessionManager.getSessionFile()
+        if (!entryId || !transcriptPath) {
+          throw new Error(
+            'memory_write requires a persisted session: the session anchor needs an entry id and a transcript path',
+          )
+        }
+
         const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
         const file = appendMemoryEntry(scope.memoryDir, {
           content: params.content,
-          entryId: ctx.sessionManager.getLeafId() ?? '',
+          entryId,
           sessionId: ctx.sessionManager.getSessionId(),
           timestamp: now(),
-          transcriptPath: ctx.sessionManager.getSessionFile() ?? '',
+          transcriptPath,
         })
         return { content: [{ text: `Memory saved to ${file}`, type: 'text' as const }], details: { file } }
       },

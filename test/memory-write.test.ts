@@ -1,5 +1,5 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
-import { equal, ok } from 'node:assert/strict'
+import { equal, ok, rejects } from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -99,4 +99,12 @@ test('MEMSEARCH_DIR routes writes to its own memory dir', async () => {
   await write(tool, ctx, '- global scope entry')
 
   ok(existsSync(join(shared, 'memory', '2026-08-13.md')))
+})
+
+test('a session without a transcript file is rejected instead of writing a broken anchor', async () => {
+  const { ctx, root, tool } = setup({ session: { ...SESSION, transcriptPath: undefined } })
+
+  await rejects(() => write(tool, ctx, '- lost entry'), /persisted session/)
+
+  ok(!existsSync(join(root, '.memsearch', 'memory', '2026-08-13.md')))
 })
