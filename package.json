@@ -1,0 +1,33 @@
+{
+  "name": "pi-memsearch",
+  "version": "0.1.0",
+  "description": "memsearch-backed long-term memory for pi",
+  "keywords": [
+    "pi-package",
+    "memsearch",
+    "memory"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sripwoud/pi-memsearch.git"
+  },
+  "type": "module",
+  "files": [
+    "extensions",
+    "prompts",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0"
+  }
+}
