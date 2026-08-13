@@ -1,5 +1,5 @@
 import { equal } from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -21,6 +21,13 @@ const VECTORS: [path: string, collection: string][] = [
 
 test('deriveCollection matches memsearch shell derivation byte-for-byte', () => {
   for (const [path, collection] of VECTORS) equal(deriveCollection(path), collection)
+})
+
+test('a symlinked project dir derives the target collection, like realpath -m', () => {
+  const target = mkdtempSync(join(tmpdir(), 'scope-target-'))
+  const link = join(mkdtempSync(join(tmpdir(), 'scope-link-')), 'aliased')
+  symlinkSync(target, link)
+  equal(deriveCollection(link), deriveCollection(target))
 })
 
 test('MEMSEARCH_DIR overrides scope and holds the memory dir directly', () => {
