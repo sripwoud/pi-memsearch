@@ -1,3 +1,3 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
+import { createMemsearchExtension } from '../src/extension.ts'
 
-export default function memsearch(_pi: ExtensionAPI) {}
+export default createMemsearchExtension()
