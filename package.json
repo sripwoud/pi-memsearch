@@ -15,8 +15,12 @@
   "files": [
     "extensions",
     "prompts",
-    "skills"
+    "skills",
+    "src"
   ],
+  "pi": {
+    "extensions": ["./extensions/memsearch.ts"]
+  },
   "engines": {
     "node": ">=22.19.0"
   },
