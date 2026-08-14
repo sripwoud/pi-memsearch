@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0](https://github.com/sripwoud/pi-memsearch/compare/v0.2.0-beta...v1.0.0) (2026-08-14)
+
+
+### Documentation
+
+* publish benchmark evidence, add reader on-ramps and license ([#28](https://github.com/sripwoud/pi-memsearch/issues/28)) ([cd8fbb1](https://github.com/sripwoud/pi-memsearch/commit/cd8fbb121c97b75b2b5a3595f27af5946c070175))
+
+
+### Miscellaneous Chores
+
+* cut v1.0.0 and publish to npm via trusted publishing ([#30](https://github.com/sripwoud/pi-memsearch/issues/30)) ([f233f40](https://github.com/sripwoud/pi-memsearch/commit/f233f401a3865b09b121c52a9f5998622f661764))
+
 ## [0.2.0-beta](https://github.com/sripwoud/pi-memsearch/compare/v0.1.0...v0.2.0-beta) (2026-08-14)
 
 

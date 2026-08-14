@@ -11,7 +11,7 @@ pi ships no built-in memory by design ("primitives, not features"). The existing
 
 ## Install
 
-Current release: [0.2.0-beta](CHANGELOG.md). <!-- x-release-please-version -->
+Current release: [1.0.0](CHANGELOG.md). <!-- x-release-please-version -->
 
 Prerequisites: [uv](https://docs.astral.sh/uv/) (the only external dependency — memsearch runs through `uvx`, so there is no Python packaging to manage), pi >= 0.84.1 (0.84.x is the tested line), Node >= 22.19.
 
