@@ -1,5 +1,5 @@
-import type { Api, Model } from '@earendil-works/pi-ai'
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
+import type { Api, AssistantMessage, Model, StopReason, UserMessage } from '@earendil-works/pi-ai'
+import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } from '@earendil-works/pi-coding-agent'
 
 export interface FakeSession {
   sessionId: string
@@ -51,11 +51,38 @@ export function fakeModel(spec: { id: string; provider?: string; input?: number;
   } as Model<Api>
 }
 
-export function createFakeContext(options: { cwd: string; session: FakeSession }): ExtensionContext {
+export function userEntry(id: string, text: string): SessionEntry {
+  const message: UserMessage = { content: text, role: 'user', timestamp: 0 }
+  return { id, message, parentId: null, timestamp: '2026-08-13T22:40:00.000Z', type: 'message' }
+}
+
+export function assistantEntry(id: string, text: string | undefined, stopReason: StopReason = 'stop'): SessionEntry {
+  const message = {
+    content: text === undefined ? [] : [{ text, type: 'text' as const }],
+    role: 'assistant',
+    stopReason,
+  } as AssistantMessage
+  return { id, message, parentId: null, timestamp: '2026-08-13T22:40:30.000Z', type: 'message' }
+}
+
+export function createFakeContext(options: {
+  cwd: string
+  session: FakeSession
+  branch?: SessionEntry[]
+  model?: Model<Api> | undefined
+  models?: Model<Api>[]
+}): ExtensionContext {
+  const models = options.models ?? []
   const sessionManager = {
+    getBranch: () => options.branch ?? [],
     getLeafId: () => options.session.entryId,
     getSessionFile: () => options.session.transcriptPath,
     getSessionId: () => options.session.sessionId,
   }
-  return { cwd: options.cwd, sessionManager } as unknown as ExtensionContext
+  const modelRegistry = {
+    find: (provider: string, modelId: string) =>
+      models.find((model) => model.provider === provider && model.id === modelId),
+    getAvailable: () => models,
+  }
+  return { cwd: options.cwd, model: options.model, modelRegistry, sessionManager } as unknown as ExtensionContext
 }

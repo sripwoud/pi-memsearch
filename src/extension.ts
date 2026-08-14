@@ -1,19 +1,31 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
+import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
 import { appendMemoryEntry, localDateKey } from './memory-file.ts'
 import { resolveProjectScope } from './scope.ts'
 import { buildSnapshot } from './snapshot.ts'
 
 export interface MemsearchDeps {
+  complete: Complete
+  distillationTimeoutMs: number
   env: NodeJS.ProcessEnv
   now(): Date
+  schedule(task: () => Promise<void>): void
 }
 
 export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi: ExtensionAPI) => void {
   const env = deps.env ?? process.env
   const now = deps.now ?? (() => new Date())
+  const schedule = deps.schedule ?? createBackgroundQueue()
 
   return (pi) => {
+    registerCapture(pi, {
+      complete: deps.complete,
+      distillationTimeoutMs: deps.distillationTimeoutMs ?? DEFAULT_DISTILLATION_TIMEOUT_MS,
+      env,
+      now,
+      schedule,
+    })
     pi.registerTool({
       description:
         'Persist a memory to the shared project memory store, immediately. Use when the user asks to remember something, or when a decision, fix, or fact should survive this session.',
@@ -68,5 +80,12 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       const block = snapshot !== undefined && snapshotDate === localDateKey(now()) ? snapshot : refreshSnapshot(ctx.cwd)
       return { systemPrompt: `${event.systemPrompt}\n\n${block}` }
     })
+  }
+}
+
+function createBackgroundQueue(): (task: () => Promise<void>) => void {
+  let tail: Promise<void> = Promise.resolve()
+  return (task) => {
+    tail = tail.then(task).catch(() => {})
   }
 }
