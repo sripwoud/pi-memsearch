@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
 import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
-import { MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
+import { type ExpandedSection, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
 import { type ExecFn, execProcess } from './exec.ts'
 import { appendMemoryEntry, localDateKey } from './memory-file.ts'
 import { deriveCollection, resolveProjectScope } from './scope.ts'
@@ -96,6 +96,28 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
 
     pi.registerTool({
       description:
+        'Expand a memory chunk (by chunk_hash from memory_search) into its full section, with the session anchor pointing at the original transcript.',
+      execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
+        const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
+        const collection = deriveCollection(scope.dir)
+        const options = signal ? { signal } : {}
+        try {
+          const section = await backend.expand(params.chunk_hash, collection, options)
+          return { content: [{ text: formatSection(section), type: 'text' as const }], details: { section } }
+        } catch (error) {
+          if (error instanceof BackendUnavailableError) return unavailableResult(error)
+          throw error
+        }
+      },
+      label: 'Memory expand',
+      name: 'memory_expand',
+      parameters: Type.Object({
+        chunk_hash: Type.String({ description: 'Chunk hash returned by memory_search' }),
+      }),
+    })
+
+    pi.registerTool({
+      description:
         'Diagnose the shared project memory backend: uv/memsearch availability and version, project scope, collection, and indexed chunk count.',
       execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => {
         const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
@@ -168,6 +190,22 @@ function formatHits(hits: SearchHit[]): string {
       } | chunk ${hit.chunk_hash} | ${hit.source}:${hit.start_line}-${hit.end_line}\n${hit.content}`,
   )
   return [`${hits.length} memory chunk(s), best first:`, ...blocks].join('\n\n')
+}
+
+function formatSection(section: ExpandedSection): string {
+  const lines = [
+    `${section.source}:${section.start_line}-${section.end_line} | ${section.heading}`,
+    '',
+    section.content,
+  ]
+  if (section.anchor) {
+    lines.push(
+      '',
+      `origin: session ${section.anchor.session} turn ${section.anchor.turn}`,
+      `transcript: ${section.anchor.transcript}`,
+    )
+  }
+  return lines.join('\n')
 }
 
 async function describeChunkCount(

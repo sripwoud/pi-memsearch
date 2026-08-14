@@ -1,8 +1,10 @@
 import {
+  type ExpandedSection,
   isLockContention,
   isMissingCollection,
   MEMSEARCH_SPEC,
   parseChunkCount,
+  parseExpandedSection,
   parseSearchHits,
   parseVersion,
   type SearchHit,
@@ -11,6 +13,7 @@ import type { ExecFn, ExecResult } from './exec.ts'
 
 const VERSION_TIMEOUT_MS = 60_000
 const STATS_TIMEOUT_MS = 10_000
+const EXPAND_TIMEOUT_MS = 10_000
 const DEFAULT_SEARCH_TIMEOUT_MS = 30_000
 const DEFAULT_TOP_K = 5
 const NEGATIVE_PROBE_TTL_MS = 30_000
@@ -46,6 +49,7 @@ export interface CommandOptions {
 }
 
 export interface Backend {
+  expand(chunkHash: string, collection: string, options?: CommandOptions): Promise<ExpandedSection>
   probe(options?: CommandOptions): Promise<Availability>
   search(query: string, collection: string, options?: CommandOptions & { topK?: number }): Promise<SearchHit[]>
   stats(collection: string, options?: CommandOptions): Promise<number | 'missing'>
@@ -154,6 +158,13 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseSearchHits(result.stdout)
   }
 
+  async function expand(chunkHash: string, collection: string, options: CommandOptions = {}): Promise<ExpandedSection> {
+    await ensureAvailable(options)
+    const result = await invoke(['expand', chunkHash, '-j', '-c', collection], EXPAND_TIMEOUT_MS, options)
+    if (result.exitCode !== 0) throw commandError('expand', result, EXPAND_TIMEOUT_MS)
+    return parseExpandedSection(result.stdout)
+  }
+
   async function stats(collection: string, options: CommandOptions = {}): Promise<number | 'missing'> {
     await ensureAvailable(options)
     const result = await invoke(['stats', '-c', collection], STATS_TIMEOUT_MS, options)
@@ -164,7 +175,7 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseChunkCount(result.stdout)
   }
 
-  return { probe, search, stats }
+  return { expand, probe, search, stats }
 }
 
 function resolveSearchTimeoutMs(env: NodeJS.ProcessEnv): number {

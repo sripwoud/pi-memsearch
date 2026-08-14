@@ -55,6 +55,43 @@ export function parseSearchHits(stdout: string): SearchHit[] {
   })
 }
 
+export interface ExpandedSection {
+  anchor?: SectionAnchor
+  chunk_hash: string
+  content: string
+  end_line: number
+  heading: string
+  source: string
+  start_line: number
+}
+
+export interface SectionAnchor {
+  session: string
+  transcript: string
+  turn: string
+}
+
+export function parseExpandedSection(stdout: string): ExpandedSection {
+  const record = asRecord(parseJson(stdout, 'expand'), 'expand', 'result')
+  const section: ExpandedSection = {
+    chunk_hash: requireString(record, 'chunk_hash', 'expand', 'result'),
+    content: requireString(record, 'content', 'expand', 'result'),
+    end_line: requireNumber(record, 'end_line', 'expand', 'result'),
+    heading: requireString(record, 'heading', 'expand', 'result'),
+    source: requireString(record, 'source', 'expand', 'result'),
+    start_line: requireNumber(record, 'start_line', 'expand', 'result'),
+  }
+  if (record['anchor'] !== undefined) {
+    const anchor = asRecord(record['anchor'], 'expand', 'anchor')
+    section.anchor = {
+      session: requireString(anchor, 'session', 'expand', 'anchor'),
+      transcript: requireString(anchor, 'transcript', 'expand', 'anchor'),
+      turn: requireString(anchor, 'turn', 'expand', 'anchor'),
+    }
+  }
+  return section
+}
+
 function parseJson(stdout: string, command: string): unknown {
   try {
     return JSON.parse(stdout)
