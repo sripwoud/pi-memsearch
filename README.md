@@ -6,12 +6,12 @@
 
 pi ships no built-in memory by design ("primitives, not features"). The existing community option, `pi-memory`, delegates search to [qmd](https://github.com/tobilu/qmd) and keeps its index user-global. Two reasons for a memsearch alternative:
 
-1. **Recall accuracy.** Head-to-head benchmark (2026-08-13, 35 queries over an identical corpus of 223 markdown files, pre-agreed decision rule, blind ground truth): memsearch **32/35** strong hits vs **26/35** for qmd's best mode. They tie on short keyword queries; memsearch wins on paraphrased and natural-question recall — the phrasing you actually use when asking "how did we fix X?" weeks later.
+1. **Recall accuracy.** Head-to-head benchmark (2026-08-13, 35 queries over an identical corpus of 223 markdown files, pre-agreed decision rule, blind ground truth): memsearch **32/35** strong hits vs **26/35** for qmd's best mode. They tie on short keyword queries; memsearch wins on paraphrased and natural-question recall — the phrasing you actually use when asking "how did we fix X?" weeks later. Full report: the author's `~/knowledge/inbox/memsearch-vs-pi-memory-benchmark.md`.
 2. **Cross-agent memory.** memsearch already integrates Claude Code, OpenClaw, OpenCode and Codex CLI, all sharing one markdown format and one collection-name derivation. This package joins pi to that mesh: pi recalls what Claude Code learned yesterday in the same repo, and vice versa.
 
 ## Install
 
-Prerequisites: [uv](https://docs.astral.sh/uv/) (the only external dependency — memsearch runs through `uvx`, so there is no Python packaging to manage), pi 0.84.x, Node >= 22.19.
+Prerequisites: [uv](https://docs.astral.sh/uv/) (the only external dependency — memsearch runs through `uvx`, so there is no Python packaging to manage), pi >= 0.84.1 (0.84.x is the tested line), Node >= 22.19.
 
 ```sh
 pi install https://github.com/sripwoud/pi-memsearch      # all projects (~/.pi/settings.json)
@@ -37,7 +37,7 @@ Markdown is the source of truth; the vector index is derived and rebuildable at 
 
 - **Location**: `<project>/.memsearch/memory/YYYY-MM-DD.md`, one file per calendar day, appended to by every agent in the mesh.
 - **Project scope**: `$MEMSEARCH_DIR`, else the git root, else the working directory — memsearch's own resolution order.
-- **Collection**: `ms_<sanitized-basename>_<8 hex of sha256(abs path)>`, memsearch's derivation, so pi searches the same index the other agents build.
+- **Collection**: `ms_<sanitized-basename>_<8 hex of sha256(abs path)>`, memsearch's derivation, so pi searches the same collection the other agents build.
 - **Entry shape**: `## Session HH:MM` once per session, `### HH:MM` per exchange, then a session anchor and third-person bullets:
 
 ```text
@@ -107,10 +107,11 @@ Markdown is the source of truth, so a missing `uv` or memsearch degrades rather 
 - **Running alongside `pi-memory`** — both capture every exchange and both inject context. Pick one.
 - **Milvus Server / Zilliz Cloud** — Milvus Lite only.
 - **Windows** — milvus-lite ships no Windows wheels; use WSL2.
+- **A forked or patched memsearch** — the package orchestrates the released CLI, and invents no memory format of its own.
 
 ## Post-v1 candidates
 
-Deferred, not rejected: per-turn auto-context (semantic injection on every prompt, once a warm-sidecar design exists — the snapshot is the designed seam); a user-global memory layer beyond `$MEMSEARCH_DIR`; `memory_forget`/`memory_restore`/`memory_read` tools; wiring memsearch's own maintenance (`compact`, `skills distill`); and an upstream pi adapter for `memsearch transcript`, so L3 stops parsing pi JSONL here.
+Deferred, not rejected: per-turn auto-context (semantic injection on every prompt, once a warm-sidecar design exists — the snapshot is the designed seam); a user-global memory layer beyond `$MEMSEARCH_DIR`; `scratchpad`, `memory_forget`, `memory_restore` and `memory_read` tools; wiring memsearch's own maintenance (`compact`, `skills distill`); and an upstream pi adapter for `memsearch transcript`, so L3 stops parsing pi JSONL here.
 
 ## Development
 
