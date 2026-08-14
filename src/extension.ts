@@ -110,8 +110,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
         const { collection, options, scope } = resolveTarget(ctx, env, signal)
         return orInstallInstructions(async () => {
-          await bootstrap.ensure(scope.dir, options)
-          if (await bootstrap.claimOnnxDownloadNotice(options)) ctx.ui.notify(ONNX_DOWNLOAD_NOTICE, 'info')
+          await bootstrap.ensure(scope.dir)
+          if (await bootstrap.claimOnnxDownloadNotice()) ctx.ui.notify(ONNX_DOWNLOAD_NOTICE, 'info')
           const hits = await backend.search(
             params.query,
             collection,
@@ -152,7 +152,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => {
         const { collection, options, scope } = resolveTarget(ctx, env, signal)
         const availability = await backend.probe(options)
-        const bootstrapState = await bootstrap.ensure(scope.dir, options)
+        const bootstrapState = await bootstrap.ensure(scope.dir)
 
         const lines: string[] = []
         if (availability.available)

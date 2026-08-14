@@ -1,6 +1,7 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { deepEqual, equal, match, ok } from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { enoentError, errResult, okResult, SEARCH_JSON, STATS_STDOUT, VERSION_STDOUT } from './fixtures.ts'
@@ -9,6 +10,7 @@ import { type FakeExecStep, GLOBAL_CONFIG_TOML, setupExtension, type SetupOption
 const UVX_PREFIX = ['--from', 'memsearch[onnx]>=0.4.17,<0.5', 'memsearch']
 const CONFIG_SET_ARGS = [...UVX_PREFIX, 'config', 'set', 'embedding.provider', 'onnx']
 const CONFIG_GET_ARGS = [...UVX_PREFIX, 'config', 'get', 'embedding.provider']
+const CONFIG_GET_MODEL_ARGS = [...UVX_PREFIX, 'config', 'get', 'embedding.model']
 
 function setup(steps: FakeExecStep[], options: SetupOptions = {}) {
   const result = setupExtension(steps, { prefix: 'bootstrap-', ...options })
@@ -150,14 +152,55 @@ test('a fresh bootstrap announces the one-time model download on the first searc
 
 test('an existing onnx config announces the download when the model was never fetched', async () => {
   const { calls, ctx, notices, search } = setup(
-    [okResult(VERSION_STDOUT), okResult('onnx\n'), okResult(SEARCH_JSON)],
+    [okResult(VERSION_STDOUT), okResult('onnx\n'), okResult('\n'), okResult(SEARCH_JSON)],
     { onnxModel: false },
   )
 
   await text(search, ctx)
 
   deepEqual(calls[1]?.args, CONFIG_GET_ARGS)
+  deepEqual(calls[2]?.args, CONFIG_GET_MODEL_ARGS)
   equal(notices.length, 1)
+})
+
+test('an existing config with a custom cached onnx model gets no notice', async () => {
+  const { calls, ctx, home, notices, search } = setup(
+    [okResult(VERSION_STDOUT), okResult('onnx\n'), okResult('my/custom-model\n'), okResult(SEARCH_JSON)],
+    { onnxModel: false },
+  )
+  mkdirSync(join(home, '.cache', 'huggingface', 'hub', 'models--my--custom-model'), { recursive: true })
+
+  await text(search, ctx)
+
+  deepEqual(calls[2]?.args, CONFIG_GET_MODEL_ARGS)
+  deepEqual(notices, [])
+})
+
+test('HF_HUB_CACHE takes precedence over the home cache when locating the model', async () => {
+  const override = mkdtempSync(join(tmpdir(), 'hub-override-'))
+  const { ctx, notices, search } = setup([okResult(VERSION_STDOUT), okResult(''), okResult(SEARCH_JSON)], {
+    env: { HF_HUB_CACHE: override },
+    globalConfig: false,
+    onnxModel: true,
+  })
+
+  await text(search, ctx)
+
+  equal(notices.length, 1)
+})
+
+test('a global config removed mid-session is re-checked and bootstrapped', async () => {
+  const { calls, ctx, home, search } = setup(
+    [okResult(VERSION_STDOUT), okResult(SEARCH_JSON), okResult(''), okResult(SEARCH_JSON)],
+  )
+
+  await text(search, ctx)
+  equal(configSets(calls).length, 0)
+
+  rmSync(join(home, '.memsearch', 'config.toml'))
+  await text(search, ctx)
+
+  equal(configSets(calls).length, 1)
 })
 
 test('an api-key provider gets no download notice and the lookup happens once', async () => {
