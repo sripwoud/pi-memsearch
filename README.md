@@ -1,4 +1,11 @@
+<div align="center">
+
 # pi-memsearch
+
+[![npm](https://img.shields.io/npm/v/pi-memsearch?logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/pi-memsearch)
+[![ci](https://img.shields.io/github/actions/workflow/status/sripwoud/pi-memsearch/master.yml?branch=master&logo=githubactions&logoColor=white&label=ci)](https://github.com/sripwoud/pi-memsearch/actions/workflows/master.yml?query=branch%3Amaster)
+
+</div>
 
 [memsearch](https://zilliztech.github.io/memsearch/)-backed long-term memory for [pi](https://pi.dev): pi writes to and recalls from the same per-project memory store that Claude Code, Codex, OpenClaw and OpenCode already share.
 
@@ -146,6 +153,6 @@ Deferred rather than rejected — post-v1 candidates are tracked as [GitHub issu
 
 No build step: pi loads `extensions/*.ts` through jiti, so the package ships TypeScript source and uses relative imports with explicit `.ts` extensions.
 
-Before a release: `mise run check`, `mise run test`, `mise run test:integration` (it drives capture → index → search → expand and the lock-contention retry against real memsearch), then `pi install` the package and confirm a live session captures and recalls. Raising the memsearch version ceiling in `src/contract.ts` or the pi peer range in `package.json` is a deliberate act: bump it, then re-run the integration suite on that line.
+Before a release: `mise run check`, `mise run test`, `mise run test:integration` (it drives capture → index → search → expand and the lock-contention retry against real memsearch), then `pi install` the package and confirm a live session captures and recalls. Raising the memsearch version ceiling in `src/contract.ts` or the pi peer range in `package.json` is a deliberate act: bump it, then re-run the integration suite on that line. Both files ship in the published tarball, so type those commits `feat:` (widened support) or `fix:`/`feat!:` — never `build:`, which cuts no release. `build:` is for the lockfile and devDependencies, which never reach a consumer.
 
 Evidence base for the design decisions: [`docs/research/`](docs/research/). Vocabulary: [`CONTEXT.md`](CONTEXT.md). Mesh-parity decision: [`docs/adr/0001-mesh-parity.md`](docs/adr/0001-mesh-parity.md).
