@@ -1,6 +1,6 @@
 {
-  // memory store, machine-written
-  "excludes": ["**/node_modules", ".memsearch"],
+  // machine-written: .memsearch (memory store), CHANGELOG.md (release-please)
+  "excludes": ["**/node_modules", ".memsearch", "CHANGELOG.md"],
   "extends": [
     "https://raw.githubusercontent.com/sripwoud/configs/main/packages/dprint/.dprint.ts.jsonc",
   ],
