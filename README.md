@@ -11,19 +11,20 @@ pi ships no built-in memory by design ("primitives, not features"). The existing
 
 ## Install
 
-Current release: [0.2.0-beta](CHANGELOG.md).
+Current release: [0.2.0-beta](CHANGELOG.md). <!-- x-release-please-version -->
 
 Prerequisites: [uv](https://docs.astral.sh/uv/) (the only external dependency — memsearch runs through `uvx`, so there is no Python packaging to manage), pi >= 0.84.1 (0.84.x is the tested line), Node >= 22.19.
 
 ```sh
-pi install https://github.com/sripwoud/pi-memsearch                # all projects (~/.pi/settings.json)
-pi install https://github.com/sripwoud/pi-memsearch -l             # this project (.pi/settings.json)
-pi install git:github.com/sripwoud/pi-memsearch@v0.2.0-beta        # pinned; `pi update` never advances it
+pi install npm:pi-memsearch                                        # all projects (~/.pi/settings.json)
+pi install npm:pi-memsearch -l                                     # this project (.pi/settings.json)
+pi install npm:pi-memsearch@1.0.0                                  # pinned; `pi update` never advances it
+pi install https://github.com/sripwoud/pi-memsearch                # unreleased master
 ```
 
 First run, once per machine: `uvx` resolves `memsearch[onnx]>=0.4.17,<0.5`, and the first embedding downloads the onnx model once (~560 MB — a ~10 s pause on a fast connection, announced as a notice so it is not mistaken for a hang). No API key is involved: when no embedding provider is configured anywhere, the package sets `embedding.provider = onnx` in memsearch's global config once. An existing config is never touched.
 
-Uninstall with `pi remove https://github.com/sripwoud/pi-memsearch`. The memory markdown under `.memsearch/` survives — it is yours, not the package's.
+Uninstall with `pi remove npm:pi-memsearch`. The memory markdown under `.memsearch/` survives — it is yours, not the package's.
 
 ## What it does
 
