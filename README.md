@@ -1,4 +1,11 @@
+<div align="center">
+
 # pi-memsearch
+
+[![npm](https://img.shields.io/npm/v/pi-memsearch?logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/pi-memsearch)
+[![ci](https://img.shields.io/github/actions/workflow/status/sripwoud/pi-memsearch/master.yml?branch=master&logo=githubactions&logoColor=white&label=ci)](https://github.com/sripwoud/pi-memsearch/actions/workflows/master.yml?query=branch%3Amaster)
+
+</div>
 
 [memsearch](https://zilliztech.github.io/memsearch/)-backed long-term memory for [pi](https://pi.dev): pi writes to and recalls from the same per-project memory store that Claude Code, Codex, OpenClaw and OpenCode already share.
 
