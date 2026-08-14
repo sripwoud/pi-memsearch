@@ -10,7 +10,7 @@ export interface MemoryEntry {
 }
 
 export function appendMemoryEntry(memoryDir: string, entry: MemoryEntry): string {
-  const file = join(memoryDir, `${formatDate(entry.timestamp)}.md`)
+  const file = dailyFilePath(memoryDir, entry.timestamp)
   const time = formatTime(entry.timestamp)
   const existing = existsSync(file) ? readFileSync(file, 'utf8') : ''
 
@@ -25,12 +25,16 @@ export function appendMemoryEntry(memoryDir: string, entry: MemoryEntry): string
   return file
 }
 
-function formatSessionAnchor(entry: MemoryEntry): string {
-  return `<!-- session:${entry.sessionId} turn:${entry.entryId} transcript:${entry.transcriptPath} -->`
+export function dailyFilePath(memoryDir: string, date: Date): string {
+  return join(memoryDir, `${localDateKey(date)}.md`)
 }
 
-function formatDate(date: Date): string {
+export function localDateKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function formatSessionAnchor(entry: MemoryEntry): string {
+  return `<!-- session:${entry.sessionId} turn:${entry.entryId} transcript:${entry.transcriptPath} -->`
 }
 
 function formatTime(date: Date): string {
