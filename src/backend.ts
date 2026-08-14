@@ -52,6 +52,7 @@ export interface CommandOptions {
 }
 
 export interface Backend {
+  configGet(key: string, options?: CommandOptions): Promise<string>
   configSet(key: string, value: string, options?: CommandOptions): Promise<void>
   expand(chunkHash: string, collection: string, options?: CommandOptions): Promise<ExpandedSection>
   index(path: string, collection: string, options?: CommandOptions): Promise<number>
@@ -175,6 +176,13 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseExpandedSection(result.stdout)
   }
 
+  async function configGet(key: string, options: CommandOptions = {}): Promise<string> {
+    await ensureAvailable(options)
+    const result = await invoke(['config', 'get', key], CONFIG_TIMEOUT_MS, options)
+    if (result.exitCode !== 0) throw commandError('config get', result, CONFIG_TIMEOUT_MS)
+    return result.stdout.trim()
+  }
+
   async function configSet(key: string, value: string, options: CommandOptions = {}): Promise<void> {
     await ensureAvailable(options)
     const result = await invoke(['config', 'set', key, value], CONFIG_TIMEOUT_MS, options)
@@ -199,7 +207,7 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseChunkCount(result.stdout)
   }
 
-  return { configSet, expand, index, probe, search, stats }
+  return { configGet, configSet, expand, index, probe, search, stats }
 }
 
 function resolveSearchTimeoutMs(env: NodeJS.ProcessEnv): number {

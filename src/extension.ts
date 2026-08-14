@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
 import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
-import { type BootstrapState, createBootstrap } from './bootstrap.ts'
+import { type BootstrapState, createBootstrap, ONNX_DOWNLOAD_NOTICE } from './bootstrap.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
 import { type ExpandedSection, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
 import { type ExecFn, execProcess } from './exec.ts'
@@ -111,6 +111,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         const { collection, options, scope } = resolveTarget(ctx, env, signal)
         return orInstallInstructions(async () => {
           await bootstrap.ensure(scope.dir, options)
+          if (await bootstrap.claimOnnxDownloadNotice(options)) ctx.ui.notify(ONNX_DOWNLOAD_NOTICE, 'info')
           const hits = await backend.search(
             params.query,
             collection,
