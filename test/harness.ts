@@ -1,3 +1,4 @@
+import type { Api, Model } from '@earendil-works/pi-ai'
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 
 export interface FakeSession {
@@ -33,6 +34,21 @@ export function createFakePi(): FakePi {
   }
 
   return { fire, pi, tools }
+}
+
+export function fakeModel(spec: { id: string; provider?: string; input?: number; output?: number }): Model<Api> {
+  return {
+    api: 'anthropic-messages',
+    baseUrl: 'https://example.invalid',
+    contextWindow: 200000,
+    cost: { cacheRead: 0, cacheWrite: 0, input: spec.input ?? 1, output: spec.output ?? 1 },
+    id: spec.id,
+    input: ['text'],
+    maxTokens: 8192,
+    name: spec.id,
+    provider: spec.provider ?? 'anthropic',
+    reasoning: false,
+  } as Model<Api>
 }
 
 export function createFakeContext(options: { cwd: string; session: FakeSession }): ExtensionContext {
