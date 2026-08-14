@@ -3,6 +3,7 @@ import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } fro
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Complete } from '../src/capture.ts'
 import type { ModelCatalog } from '../src/distillation-model.ts'
 import type { ExecFn, ExecOptions, ExecResult } from '../src/exec.ts'
 import { createMemsearchExtension } from '../src/extension.ts'
@@ -125,8 +126,12 @@ export const TEST_SESSION: FakeSession = {
 }
 
 export interface SetupOptions {
+  branch?: SessionEntry[]
   clock?: () => Date
+  complete?: Complete
   env?: NodeJS.ProcessEnv
+  model?: Model<Api>
+  models?: Model<Api>[]
   prefix?: string
   sleep?: (ms: number) => Promise<void>
 }
@@ -134,7 +139,7 @@ export interface SetupOptions {
 export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}) {
   const root = mkdtempSync(join(tmpdir(), options.prefix ?? 'pi-memsearch-'))
   mkdirSync(join(root, '.git'))
-  const { pi, tools } = createFakePi()
+  const { fire, pi, tools } = createFakePi()
   const { calls, exec } = createFakeExec(steps)
   const sleeps: number[] = []
   createMemsearchExtension({
@@ -145,7 +150,14 @@ export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}
       ?? (async (ms) => {
         sleeps.push(ms)
       }),
+    ...(options.complete ? { complete: options.complete } : {}),
   })(pi)
-  const ctx = createFakeContext({ cwd: root, session: TEST_SESSION })
-  return { calls, ctx, root, sleeps, tools }
+  const ctx = createFakeContext({
+    cwd: root,
+    session: TEST_SESSION,
+    ...(options.branch ? { branch: options.branch } : {}),
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.models ? { models: options.models } : {}),
+  })
+  return { calls, ctx, fire, root, sleeps, tools }
 }

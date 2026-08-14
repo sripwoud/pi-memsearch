@@ -7,7 +7,15 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { type Complete, DISTILLATION_SYSTEM_PROMPT, type DistillationRequest } from '../src/capture.ts'
 import { createMemsearchExtension } from '../src/extension.ts'
-import { assistantEntry, createFakeContext, createFakePi, fakeModel, type FakeSession, userEntry } from './harness.ts'
+import {
+  assistantEntry,
+  createFakeContext,
+  createFakeExec,
+  createFakePi,
+  fakeModel,
+  type FakeSession,
+  userEntry,
+} from './harness.ts'
 
 const TRANSCRIPT = '/home/user/.pi/agent/sessions/--project--/2026-08-13_abc.jsonl'
 
@@ -44,10 +52,12 @@ function setup(options: {
     complete,
     distillationTimeoutMs: options.timeoutMs ?? 1000,
     env: options.env ?? {},
+    exec: createFakeExec([]).exec,
     now: () => new Date(2026, 7, 13, 22, 41),
     schedule: (task) => {
       tasks.push(task())
     },
+    sleep: async () => {},
   })(pi)
 
   const ctx = createFakeContext({

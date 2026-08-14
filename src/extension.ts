@@ -4,6 +4,8 @@ import { type Backend, BackendUnavailableError, createBackend } from './backend.
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
 import { type ExpandedSection, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
 import { type ExecFn, execProcess } from './exec.ts'
+import { type IndexState, readIndexState } from './index-state.ts'
+import { createIndexTriggers, SHUTDOWN_CAP_MS } from './indexer.ts'
 import { appendMemoryEntry, localDateKey } from './memory-file.ts'
 import { deriveCollection, type ProjectScope, resolveProjectScope } from './scope.ts'
 import { buildSnapshot } from './snapshot.ts'
@@ -21,19 +23,45 @@ export interface MemsearchDeps {
 export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi: ExtensionAPI) => void {
   const env = deps.env ?? process.env
   const now = deps.now ?? (() => new Date())
-  const schedule = deps.schedule ?? createBackgroundQueue()
+  const queue = createBackgroundQueue()
+  const schedule = deps.schedule ?? queue.schedule
   const exec = deps.exec ?? execProcess
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
 
   return (pi) => {
+    const backend = createBackend({ env, exec, now, sleep })
+    const indexer = createIndexTriggers({ backend, env, sleep })
+    let captureAbort = new AbortController()
+    let shutdownEpoch = 0
     registerCapture(pi, {
       complete: deps.complete,
       distillationTimeoutMs: deps.distillationTimeoutMs ?? DEFAULT_DISTILLATION_TIMEOUT_MS,
       env,
       now,
+      onWrite: (cwd) => indexer.noteWrite(cwd),
       schedule,
+      shutdownSignal: () => captureAbort.signal,
     })
-    const backend = createBackend({ env, exec, now, sleep })
+
+    pi.on('session_start', (_event, ctx) => {
+      shutdownEpoch++
+      captureAbort = new AbortController()
+      indexer.catchUp(ctx.cwd)
+    })
+    pi.on('session_shutdown', async () => {
+      indexer.beginShutdown()
+      const epoch = ++shutdownEpoch
+      const flushed = (async () => {
+        await queue.flush()
+        await indexer.settle()
+      })()
+      const capped = sleep(SHUTDOWN_CAP_MS).then(() => {
+        if (epoch !== shutdownEpoch) return
+        captureAbort.abort()
+        indexer.abortInFlight()
+      })
+      await Promise.race([flushed, capped])
+    })
 
     pi.registerTool({
       description:
@@ -55,6 +83,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           timestamp: now(),
           transcriptPath,
         })
+        indexer.noteWrite(ctx.cwd)
         return { content: [{ text: `Memory saved to ${file}`, type: 'text' as const }], details: { file } }
       },
       label: 'Memory write',
@@ -119,6 +148,9 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         else
           lines.push(`backend: unavailable (${availability.reason})`, availability.instructions)
         lines.push(`scope: ${scope.dir}`, `collection: ${collection}`)
+        lines.push(...describeIndexHealth(scope.memoryDir))
+        const failure = indexer.lastFailure()
+        if (failure !== undefined) lines.push(`last index run: failed (${failure})`)
         if (availability.available)
           lines.push(await describeChunkCount(backend, collection, options))
 
@@ -156,10 +188,18 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
   }
 }
 
-function createBackgroundQueue(): (task: () => Promise<void>) => void {
+interface BackgroundQueue {
+  flush(): Promise<void>
+  schedule(task: () => Promise<void>): void
+}
+
+function createBackgroundQueue(): BackgroundQueue {
   let tail: Promise<void> = Promise.resolve()
-  return (task) => {
-    tail = tail.then(task).catch(() => {})
+  return {
+    flush: () => tail,
+    schedule(task) {
+      tail = tail.then(task).catch(() => {})
+    },
   }
 }
 
@@ -214,6 +254,28 @@ function formatSection(section: ExpandedSection): string {
     )
   }
   return lines.join('\n')
+}
+
+function describeIndexHealth(memoryDir: string): string[] {
+  let state: IndexState | undefined
+  try {
+    state = readIndexState(memoryDir)
+  } catch (error) {
+    return [`index: state unreadable (${error instanceof Error ? error.message : String(error)})`]
+  }
+  if (!state) return ['index: no state recorded yet']
+  const lines = [describeIndexStatus(state)]
+  for (const failure of state.failedFiles) lines.push(`  failed: ${failure.path} (${failure.error})`)
+  return lines
+}
+
+function describeIndexStatus(state: IndexState): string {
+  if (state.status === 'ok')
+    return state.lastCompletedAt === undefined ? 'index: ok' : `index: ok (last indexed ${state.lastCompletedAt})`
+  if (state.status === 'degraded') return `index: degraded (${state.failedFiles.length} failed file(s))`
+  if (state.status === 'error')
+    return state.lastError === undefined ? 'index: error' : `index: error (${state.lastError})`
+  return `index: ${state.status}`
 }
 
 async function describeChunkCount(
