@@ -2,7 +2,6 @@ export const MEMSEARCH_SPEC = 'memsearch[onnx]>=0.4.17,<0.5'
 
 const LOCK_PATTERNS = [
   /another process already has the database open/,
-  /Failed to open the local Milvus Lite database/,
   /another process holds the lock/,
 ]
 
