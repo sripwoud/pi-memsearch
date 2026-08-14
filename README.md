@@ -130,9 +130,7 @@ A missing `uv` or memsearch degrades rather than breaks:
 - **Windows** — milvus-lite ships no Windows wheels; use WSL2.
 - **A forked or patched memsearch** — the package orchestrates the released CLI, and invents no memory format of its own.
 
-## Post-v1 candidates
-
-Deferred, not rejected: per-turn auto-context (semantic injection on every prompt, once a warm-sidecar design exists — the snapshot is the designed seam); a user-global memory layer beyond `$MEMSEARCH_DIR`; `scratchpad`, `memory_forget`, `memory_restore` and `memory_read` tools; wiring memsearch's own maintenance (`compact`, `skills distill`); and an upstream pi adapter for `memsearch transcript`, so L3 stops parsing pi JSONL here.
+Deferred rather than rejected — post-v1 candidates are tracked as [GitHub issues](https://github.com/sripwoud/pi-memsearch/issues) (#23–#27).
 
 ## Development
 
