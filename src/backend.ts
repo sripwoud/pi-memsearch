@@ -13,6 +13,7 @@ import {
 import type { ExecFn, ExecResult } from './exec.ts'
 
 const VERSION_TIMEOUT_MS = 60_000
+const CONFIG_TIMEOUT_MS = 10_000
 const STATS_TIMEOUT_MS = 10_000
 const EXPAND_TIMEOUT_MS = 10_000
 const INDEX_TIMEOUT_MS = 120_000
@@ -51,6 +52,7 @@ export interface CommandOptions {
 }
 
 export interface Backend {
+  configSet(key: string, value: string, options?: CommandOptions): Promise<void>
   expand(chunkHash: string, collection: string, options?: CommandOptions): Promise<ExpandedSection>
   index(path: string, collection: string, options?: CommandOptions): Promise<number>
   probe(options?: CommandOptions): Promise<Availability>
@@ -173,12 +175,19 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseExpandedSection(result.stdout)
   }
 
+  async function configSet(key: string, value: string, options: CommandOptions = {}): Promise<void> {
+    await ensureAvailable(options)
+    const result = await invoke(['config', 'set', key, value], CONFIG_TIMEOUT_MS, options)
+    if (result.exitCode !== 0) throw commandError('config set', result, CONFIG_TIMEOUT_MS)
+  }
+
   async function index(path: string, collection: string, options: CommandOptions = {}): Promise<number> {
     await ensureAvailable(options)
     const result = await invoke(['index', path, '-c', collection], INDEX_TIMEOUT_MS, options)
     if (result.exitCode !== 0) throw commandError('index', result, INDEX_TIMEOUT_MS)
     return parseIndexedChunks(result.stdout)
   }
+
 
   async function stats(collection: string, options: CommandOptions = {}): Promise<number | 'missing'> {
     await ensureAvailable(options)
@@ -190,7 +199,7 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseChunkCount(result.stdout)
   }
 
-  return { expand, index, probe, search, stats }
+  return { configSet, expand, index, probe, search, stats }
 }
 
 function resolveSearchTimeoutMs(env: NodeJS.ProcessEnv): number {

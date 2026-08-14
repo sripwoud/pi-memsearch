@@ -1,6 +1,6 @@
 import type { Api, AssistantMessage, Model, StopReason, UserMessage } from '@earendil-works/pi-ai'
 import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } from '@earendil-works/pi-coding-agent'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Complete } from '../src/capture.ts'
@@ -130,22 +130,38 @@ export interface SetupOptions {
   clock?: () => Date
   complete?: Complete
   env?: NodeJS.ProcessEnv
+  globalConfig?: boolean
   model?: Model<Api>
   models?: Model<Api>[]
   prefix?: string
+  schedule?: (task: () => Promise<void>) => void
   sleep?: (ms: number) => Promise<void>
+}
+
+export const GLOBAL_CONFIG_TOML = '[embedding]\nprovider = "openai"\napi_key = "env:OPENAI_API_KEY"\n'
+
+export function seedHome(base: string, options: { globalConfig?: boolean } = {}): string {
+  const home = join(base, 'home')
+  mkdirSync(home, { recursive: true })
+  if (options.globalConfig ?? true) {
+    mkdirSync(join(home, '.memsearch'), { recursive: true })
+    writeFileSync(join(home, '.memsearch', 'config.toml'), GLOBAL_CONFIG_TOML)
+  }
+  return home
 }
 
 export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}) {
   const root = mkdtempSync(join(tmpdir(), options.prefix ?? 'pi-memsearch-'))
   mkdirSync(join(root, '.git'))
+  const home = seedHome(root, { globalConfig: options.globalConfig ?? true })
   const { fire, pi, tools } = createFakePi()
   const { calls, exec } = createFakeExec(steps)
   const sleeps: number[] = []
   createMemsearchExtension({
-    env: options.env ?? {},
+    env: { HOME: home, ...options.env },
     exec,
     now: options.clock ?? (() => new Date(2026, 7, 13, 22, 41)),
+    ...(options.schedule ? { schedule: options.schedule } : {}),
     sleep: options.sleep
       ?? (async (ms) => {
         sleeps.push(ms)
@@ -159,5 +175,5 @@ export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}
     ...(options.model ? { model: options.model } : {}),
     ...(options.models ? { models: options.models } : {}),
   })
-  return { calls, ctx, fire, root, sleeps, tools }
+  return { calls, ctx, fire, home, root, sleeps, tools }
 }
