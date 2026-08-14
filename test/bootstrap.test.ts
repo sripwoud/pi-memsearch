@@ -4,10 +4,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { enoentError, errResult, okResult, SEARCH_JSON, STATS_STDOUT, VERSION_STDOUT } from './fixtures.ts'
+import { enoentError, errResult, okResult, SEARCH_JSON, STATS_STDOUT, UVX_PREFIX, VERSION_STDOUT } from './fixtures.ts'
 import { type FakeExecStep, GLOBAL_CONFIG_TOML, setupExtension, type SetupOptions } from './harness.ts'
 
-const UVX_PREFIX = ['--from', 'memsearch[onnx]>=0.4.17,<0.5', 'memsearch']
 const CONFIG_SET_ARGS = [...UVX_PREFIX, 'config', 'set', 'embedding.provider', 'onnx']
 const CONFIG_GET_ARGS = [...UVX_PREFIX, 'config', 'get', 'embedding.provider']
 const CONFIG_GET_MODEL_ARGS = [...UVX_PREFIX, 'config', 'get', 'embedding.model']
@@ -214,6 +213,30 @@ test('an api-key provider gets no download notice and the lookup happens once', 
 
   deepEqual(notices, [])
   equal(calls.filter((call) => deepEqualArgs(call.args, CONFIG_GET_ARGS)).length, 1)
+})
+
+test('a persistently failing bootstrap is retried only after the ttl expires', async () => {
+  let time = new Date(2026, 7, 13, 22, 41).getTime()
+  const { calls, ctx, search } = setup(
+    [
+      okResult(VERSION_STDOUT),
+      errResult(1, 'Error: read-only file system\n'),
+      okResult(SEARCH_JSON),
+      okResult(SEARCH_JSON),
+      okResult(''),
+      okResult(SEARCH_JSON),
+    ],
+    { clock: () => new Date(time), globalConfig: false },
+  )
+
+  await text(search, ctx)
+  time += 5_000
+  await text(search, ctx)
+  equal(configSets(calls).length, 1)
+
+  time += 31_000
+  await text(search, ctx)
+  equal(configSets(calls).length, 2)
 })
 
 test('a backend installed mid-session is bootstrapped and searchable without restart', async () => {

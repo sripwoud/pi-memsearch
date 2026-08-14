@@ -6,9 +6,9 @@ import { type Backend, BackendUnavailableError } from './backend.ts'
 export const ONNX_DOWNLOAD_NOTICE = 'First memory search: downloading the embedding model (one-time, ~10 s).'
 
 const DEFAULT_ONNX_MODEL = 'gpahal/bge-m3-onnx-int8'
+const RETRY_TTL_MS = 30_000
 
 export type BootstrapState =
-  | { status: 'pending' }
   | { status: 'bootstrapped' }
   | { status: 'existing-config'; configPath: string }
   | { status: 'failed'; reason: string }
@@ -21,10 +21,12 @@ export interface Bootstrap {
 export interface BootstrapDeps {
   backend: Pick<Backend, 'configGet' | 'configSet'>
   env: NodeJS.ProcessEnv
+  now(): Date
 }
 
 export function createBootstrap(deps: BootstrapDeps): Bootstrap {
-  let state: BootstrapState = { status: 'pending' }
+  let state: BootstrapState | undefined
+  let retryAtMs = 0
   let inFlight: Promise<BootstrapState> | undefined
   let claimed = false
   let providerLookup: Promise<string | undefined> | undefined
@@ -41,7 +43,8 @@ export function createBootstrap(deps: BootstrapDeps): Bootstrap {
   }
 
   function ensure(projectDir: string): Promise<BootstrapState> {
-    if (state.status === 'bootstrapped') return Promise.resolve(state)
+    if (state?.status === 'bootstrapped') return Promise.resolve(state)
+    if (state?.status === 'failed' && deps.now().getTime() < retryAtMs) return Promise.resolve(state)
     if (inFlight) return inFlight
     const configPath = existingConfigPath(deps.env, projectDir)
     if (configPath !== undefined) {
@@ -51,6 +54,7 @@ export function createBootstrap(deps: BootstrapDeps): Bootstrap {
     inFlight = run()
       .then((next) => {
         state = next
+        if (next.status === 'failed') retryAtMs = deps.now().getTime() + RETRY_TTL_MS
         return next
       })
       .finally(() => {
@@ -60,23 +64,17 @@ export function createBootstrap(deps: BootstrapDeps): Bootstrap {
   }
 
   function lookupProvider(): Promise<string | undefined> {
-    if (state.status === 'bootstrapped') return Promise.resolve('onnx')
-    if (state.status !== 'existing-config') return Promise.resolve(undefined)
-    providerLookup ??= deps.backend.configGet('embedding.provider').catch(() => {
-      providerLookup = undefined
-      return undefined
-    })
+    if (state?.status === 'bootstrapped') return Promise.resolve('onnx')
+    if (state?.status !== 'existing-config') return Promise.resolve(undefined)
+    providerLookup ??= deps.backend.configGet('embedding.provider').catch(() => undefined)
     return providerLookup
   }
 
   function lookupModel(): Promise<string | undefined> {
-    if (state.status === 'bootstrapped') return Promise.resolve(DEFAULT_ONNX_MODEL)
+    if (state?.status === 'bootstrapped') return Promise.resolve(DEFAULT_ONNX_MODEL)
     modelLookup ??= deps.backend.configGet('embedding.model').then(
       (value) => (value === '' ? DEFAULT_ONNX_MODEL : value),
-      () => {
-        modelLookup = undefined
-        return undefined
-      },
+      () => undefined,
     )
     return modelLookup
   }

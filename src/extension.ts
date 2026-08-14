@@ -63,7 +63,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       })
       await Promise.race([flushed, capped])
     })
-    const bootstrap = createBootstrap({ backend, env })
+    const bootstrap = createBootstrap({ backend, env, now })
 
     pi.on('session_start', (_event, ctx) => {
       const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
@@ -253,8 +253,6 @@ function describeBootstrap(state: BootstrapState): string {
       return `bootstrap: not needed (existing config: ${state.configPath})`
     case 'failed':
       return `bootstrap: failed (${state.reason})`
-    case 'pending':
-      return 'bootstrap: pending'
   }
 }
 
