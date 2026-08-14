@@ -21,6 +21,7 @@ export function readIndexState(memoryDir: string): IndexState | undefined {
   const path = indexStatePath(memoryDir)
   if (!existsSync(path)) return undefined
   const record = asRecord(parseJson(readFileSync(path, 'utf8')), 'state')
+  if (record['schema_version'] !== 1) throw driftError(`unsupported schema_version ${String(record['schema_version'])}`)
   const status = record['status']
   if (typeof status !== 'string') throw driftError('field "status" expected a string')
   const state: IndexState = { failedFiles: parseFailedFiles(record['failed_files']), status }

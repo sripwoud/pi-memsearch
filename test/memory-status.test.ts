@@ -151,6 +151,15 @@ test('an error index state surfaces the last error', async () => {
   ok(text.includes('index: error (RuntimeError: could not open the database)'))
 })
 
+test('an unsupported index-state schema version reads as unreadable', async () => {
+  const { ctx, root, tool } = setup([okResult(VERSION_STDOUT), okResult(STATS_STDOUT)])
+  writeIndexState(root, { failed_files: [], schema_version: 2, status: 'ok' })
+
+  const text = await status(tool, ctx)
+
+  match(text, /index: state unreadable \(index-state file drifted: unsupported schema_version 2\)/)
+})
+
 test('an unreadable index-state file is reported instead of crashing the status tool', async () => {
   const { ctx, root, tool } = setup([okResult(VERSION_STDOUT), okResult(STATS_STDOUT)])
   mkdirSync(join(root, '.memsearch'), { recursive: true })

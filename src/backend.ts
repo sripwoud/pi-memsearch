@@ -52,7 +52,7 @@ export interface CommandOptions {
 
 export interface Backend {
   expand(chunkHash: string, collection: string, options?: CommandOptions): Promise<ExpandedSection>
-  index(paths: string[], collection: string, options?: CommandOptions): Promise<number>
+  index(path: string, collection: string, options?: CommandOptions): Promise<number>
   probe(options?: CommandOptions): Promise<Availability>
   search(query: string, collection: string, options?: CommandOptions & { topK?: number }): Promise<SearchHit[]>
   stats(collection: string, options?: CommandOptions): Promise<number | 'missing'>
@@ -173,9 +173,9 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseExpandedSection(result.stdout)
   }
 
-  async function index(paths: string[], collection: string, options: CommandOptions = {}): Promise<number> {
+  async function index(path: string, collection: string, options: CommandOptions = {}): Promise<number> {
     await ensureAvailable(options)
-    const result = await invoke(['index', ...paths, '-c', collection], INDEX_TIMEOUT_MS, options)
+    const result = await invoke(['index', path, '-c', collection], INDEX_TIMEOUT_MS, options)
     if (result.exitCode !== 0) throw commandError('index', result, INDEX_TIMEOUT_MS)
     return parseIndexedChunks(result.stdout)
   }

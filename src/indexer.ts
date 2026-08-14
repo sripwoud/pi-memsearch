@@ -9,6 +9,7 @@ export interface IndexTriggers {
   abortInFlight(): void
   beginShutdown(): void
   catchUp(cwd: string): void
+  lastFailure(): string | undefined
   noteWrite(cwd: string): void
   settle(): Promise<void>
 }
@@ -25,30 +26,48 @@ export function createIndexTriggers(deps: IndexTriggersDeps): IndexTriggers {
   let cwd = ''
   let cycle: Promise<void> | undefined
   let controller = new AbortController()
+  let lastError: string | undefined
   let shuttingDown = false
   let wakeShutdown: () => void = () => {}
-  const shutdownStarted = new Promise<void>((resolve) => {
+  let shutdownStarted = new Promise<void>((resolve) => {
     wakeShutdown = resolve
   })
+
+  function arm(): void {
+    if (!shuttingDown) return
+    shuttingDown = false
+    shutdownStarted = new Promise<void>((resolve) => {
+      wakeShutdown = resolve
+    })
+  }
+
+  let immediate = false
+  let wakeWait: () => void = () => {}
 
   function request(nextCwd: string, debounce: boolean): void {
     cwd = nextCwd
     generation++
+    if (!debounce) {
+      immediate = true
+      wakeWait()
+    }
     if (cycle) return
-    cycle = runCycle(debounce).finally(() => {
+    cycle = runCycle().finally(() => {
       cycle = undefined
     })
   }
 
-  async function runCycle(debounce: boolean): Promise<void> {
-    let wait = debounce
+  async function runCycle(): Promise<void> {
     while (indexedGeneration < generation) {
-      if (wait && !shuttingDown) {
+      if (!immediate && !shuttingDown) {
         const seen = generation
-        await Promise.race([deps.sleep(INDEX_DEBOUNCE_MS), shutdownStarted])
-        if (generation !== seen && !shuttingDown) continue
+        const woken = new Promise<void>((resolve) => {
+          wakeWait = resolve
+        })
+        await Promise.race([deps.sleep(INDEX_DEBOUNCE_MS), shutdownStarted, woken])
+        if (generation !== seen && !shuttingDown && !immediate) continue
       }
-      wait = true
+      immediate = false
       const target = generation
       await runIndex()
       indexedGeneration = target
@@ -58,10 +77,12 @@ export function createIndexTriggers(deps: IndexTriggersDeps): IndexTriggers {
   async function runIndex(): Promise<void> {
     const scope = resolveProjectScope({ baseDir: cwd, env: deps.env })
     if (!existsSync(scope.memoryDir)) return
-    await deps
-      .backend
-      .index([scope.memoryDir], deriveCollection(scope.dir), { signal: controller.signal })
-      .catch(() => undefined)
+    try {
+      await deps.backend.index(scope.memoryDir, deriveCollection(scope.dir), { signal: controller.signal })
+      lastError = undefined
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+    }
   }
 
   return {
@@ -74,7 +95,11 @@ export function createIndexTriggers(deps: IndexTriggersDeps): IndexTriggers {
       wakeShutdown()
     },
     catchUp(nextCwd) {
+      arm()
       request(nextCwd, false)
+    },
+    lastFailure() {
+      return lastError
     },
     noteWrite(nextCwd) {
       request(nextCwd, true)

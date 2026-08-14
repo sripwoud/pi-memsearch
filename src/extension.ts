@@ -31,6 +31,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
   return (pi) => {
     const backend = createBackend({ env, exec, now, sleep })
     const indexer = createIndexTriggers({ backend, env, sleep })
+    let captureAbort = new AbortController()
+    let shutdownEpoch = 0
     registerCapture(pi, {
       complete: deps.complete,
       distillationTimeoutMs: deps.distillationTimeoutMs ?? DEFAULT_DISTILLATION_TIMEOUT_MS,
@@ -38,18 +40,27 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       now,
       onWrite: (cwd) => indexer.noteWrite(cwd),
       schedule,
+      shutdownSignal: () => captureAbort.signal,
     })
 
     pi.on('session_start', (_event, ctx) => {
+      shutdownEpoch++
+      captureAbort = new AbortController()
       indexer.catchUp(ctx.cwd)
     })
     pi.on('session_shutdown', async () => {
       indexer.beginShutdown()
+      const epoch = ++shutdownEpoch
       const flushed = (async () => {
         await queue.flush()
         await indexer.settle()
       })()
-      await Promise.race([flushed, sleep(SHUTDOWN_CAP_MS).then(() => indexer.abortInFlight())])
+      const capped = sleep(SHUTDOWN_CAP_MS).then(() => {
+        if (epoch !== shutdownEpoch) return
+        captureAbort.abort()
+        indexer.abortInFlight()
+      })
+      await Promise.race([flushed, capped])
     })
 
     pi.registerTool({
@@ -138,6 +149,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           lines.push(`backend: unavailable (${availability.reason})`, availability.instructions)
         lines.push(`scope: ${scope.dir}`, `collection: ${collection}`)
         lines.push(...describeIndexHealth(scope.memoryDir))
+        const failure = indexer.lastFailure()
+        if (failure !== undefined) lines.push(`last index run: failed (${failure})`)
         if (availability.available)
           lines.push(await describeChunkCount(backend, collection, options))
 

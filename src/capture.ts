@@ -39,6 +39,7 @@ export interface CaptureDeps {
   now(): Date
   onWrite(cwd: string): void
   schedule(task: () => Promise<void>): void
+  shutdownSignal(): AbortSignal
 }
 
 export function registerCapture(pi: ExtensionAPI, deps: CaptureDeps): void {
@@ -72,7 +73,12 @@ export function registerCapture(pi: ExtensionAPI, deps: CaptureDeps): void {
           env: deps.env,
           sessionModel: ctx.model,
         })
-        const content = await distill(complete, { model, transcript }, deps.distillationTimeoutMs)
+        const content = await distill(
+          complete,
+          { model, transcript },
+          deps.distillationTimeoutMs,
+          deps.shutdownSignal(),
+        )
         appendMemoryEntry(memoryDir, { ...anchor, content })
       } catch (error) {
         appendMemoryEntry(memoryDir, { ...anchor, content: diagnosticMarker(error) })
@@ -86,20 +92,31 @@ async function distill(
   complete: Complete,
   request: { model: Model<Api>; transcript: string },
   timeoutMs: number,
+  shutdownSignal: AbortSignal,
 ): Promise<string> {
   const controller = new AbortController()
-  const timedOut = new Promise<never>((_, reject) => {
+  const aborted = new Promise<never>((_, reject) => {
     const timer = setTimeout(() => {
       const error = new Error(`distillation timed out after ${timeoutMs}ms`)
       controller.abort(error)
       reject(error)
     }, timeoutMs)
-    controller.signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
+    const onShutdownCap = () => {
+      const error = new Error('aborted by the shutdown cap')
+      controller.abort(error)
+      reject(error)
+    }
+    if (shutdownSignal.aborted) onShutdownCap()
+    else shutdownSignal.addEventListener('abort', onShutdownCap, { once: true })
+    controller.signal.addEventListener('abort', () => {
+      clearTimeout(timer)
+      shutdownSignal.removeEventListener('abort', onShutdownCap)
+    }, { once: true })
   })
   try {
     const text = await Promise.race([
       complete({ ...request, signal: controller.signal, systemPrompt: DISTILLATION_SYSTEM_PROMPT }),
-      timedOut,
+      aborted,
     ])
     const trimmed = text.trim()
     if (!trimmed) throw new Error('distillation returned no text')
