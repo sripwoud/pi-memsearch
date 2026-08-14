@@ -19,7 +19,9 @@
     "src"
   ],
   "pi": {
-    "extensions": ["./extensions/memsearch.ts"]
+    "extensions": ["./extensions/memsearch.ts"],
+    "prompts": ["./prompts"],
+    "skills": ["./skills"]
   },
   "engines": {
     "node": ">=22.19.0"
