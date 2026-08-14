@@ -17,6 +17,11 @@ alias = "t"
 description = "Run the tests"
 run = "node --test 'test/**/*.test.ts'"
 
+[tasks."test:integration"]
+alias = "ti"
+description = "Run the integration suite against real memsearch (needs uv; skipped by `test`)"
+run = "PI_MEMSEARCH_IT=1 node --test --test-timeout=300000 'test/integration/*.test.ts'"
+
 [tasks.dev]
 alias = "d"
 description = "Run pi with the local extension loaded"
