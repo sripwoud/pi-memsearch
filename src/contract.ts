@@ -25,6 +25,13 @@ export function parseChunkCount(stdout: string): number {
   return Number(count)
 }
 
+export function parseIndexedChunks(stdout: string): number {
+  const count = /Indexed (\d+) chunks\./.exec(stdout)?.[1]
+  if (count === undefined)
+    throw new Error(`memsearch index output drifted: expected "Indexed N chunks.", got "${stdout.trim()}"`)
+  return Number(count)
+}
+
 export interface SearchHit {
   chunk_hash: string
   content: string
