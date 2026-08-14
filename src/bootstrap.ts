@@ -108,7 +108,7 @@ function onnxModelCached(env: NodeJS.ProcessEnv, model: string): boolean {
 }
 
 function hubCacheDir(env: NodeJS.ProcessEnv): string {
-  const hubCache = env['HF_HUB_CACHE']
+  const hubCache = env['HF_HUB_CACHE'] ?? env['HUGGINGFACE_HUB_CACHE']
   if (hubCache) return hubCache
   const hfHome = env['HF_HOME'] ?? join(env['XDG_CACHE_HOME'] ?? join(homeDir(env), '.cache'), 'huggingface')
   return join(hfHome, 'hub')
