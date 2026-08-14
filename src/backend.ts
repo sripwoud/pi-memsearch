@@ -13,6 +13,7 @@ import {
 import type { ExecFn, ExecResult } from './exec.ts'
 
 const VERSION_TIMEOUT_MS = 60_000
+const CONFIG_TIMEOUT_MS = 10_000
 const STATS_TIMEOUT_MS = 10_000
 const EXPAND_TIMEOUT_MS = 10_000
 const INDEX_TIMEOUT_MS = 120_000
@@ -51,6 +52,8 @@ export interface CommandOptions {
 }
 
 export interface Backend {
+  configGet(key: string, options?: CommandOptions): Promise<string>
+  configSet(key: string, value: string, options?: CommandOptions): Promise<void>
   expand(chunkHash: string, collection: string, options?: CommandOptions): Promise<ExpandedSection>
   index(path: string, collection: string, options?: CommandOptions): Promise<number>
   probe(options?: CommandOptions): Promise<Availability>
@@ -153,30 +156,46 @@ export function createBackend(deps: BackendDeps): Backend {
     if (!availability.available) throw new BackendUnavailableError(availability)
   }
 
+  async function runCommand(
+    name: string,
+    args: string[],
+    timeoutMs: number,
+    options: CommandOptions,
+  ): Promise<ExecResult> {
+    await ensureAvailable(options)
+    const result = await invoke(args, timeoutMs, options)
+    if (result.exitCode !== 0) throw commandError(name, result, timeoutMs)
+    return result
+  }
+
   async function search(
     query: string,
     collection: string,
     options: CommandOptions & { topK?: number } = {},
   ): Promise<SearchHit[]> {
-    await ensureAvailable(options)
     const topK = options.topK ?? DEFAULT_TOP_K
     const args = ['search', '-j', '-k', String(topK), '-c', collection, '--', query]
-    const result = await invoke(args, searchTimeoutMs, options)
-    if (result.exitCode !== 0) throw commandError('search', result, searchTimeoutMs)
+    const result = await runCommand('search', args, searchTimeoutMs, options)
     return parseSearchHits(result.stdout)
   }
 
   async function expand(chunkHash: string, collection: string, options: CommandOptions = {}): Promise<ExpandedSection> {
-    await ensureAvailable(options)
-    const result = await invoke(['expand', '-j', '-c', collection, '--', chunkHash], EXPAND_TIMEOUT_MS, options)
-    if (result.exitCode !== 0) throw commandError('expand', result, EXPAND_TIMEOUT_MS)
+    const args = ['expand', '-j', '-c', collection, '--', chunkHash]
+    const result = await runCommand('expand', args, EXPAND_TIMEOUT_MS, options)
     return parseExpandedSection(result.stdout)
   }
 
+  async function configGet(key: string, options: CommandOptions = {}): Promise<string> {
+    const result = await runCommand('config get', ['config', 'get', key], CONFIG_TIMEOUT_MS, options)
+    return result.stdout.trim()
+  }
+
+  async function configSet(key: string, value: string, options: CommandOptions = {}): Promise<void> {
+    await runCommand('config set', ['config', 'set', key, value], CONFIG_TIMEOUT_MS, options)
+  }
+
   async function index(path: string, collection: string, options: CommandOptions = {}): Promise<number> {
-    await ensureAvailable(options)
-    const result = await invoke(['index', path, '-c', collection], INDEX_TIMEOUT_MS, options)
-    if (result.exitCode !== 0) throw commandError('index', result, INDEX_TIMEOUT_MS)
+    const result = await runCommand('index', ['index', path, '-c', collection], INDEX_TIMEOUT_MS, options)
     return parseIndexedChunks(result.stdout)
   }
 
@@ -190,7 +209,7 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseChunkCount(result.stdout)
   }
 
-  return { expand, index, probe, search, stats }
+  return { configGet, configSet, expand, index, probe, search, stats }
 }
 
 function resolveSearchTimeoutMs(env: NodeJS.ProcessEnv): number {

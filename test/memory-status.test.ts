@@ -11,11 +11,10 @@ import {
   MISSING_COLLECTION_STDERR,
   okResult,
   STATS_STDOUT,
+  UVX_PREFIX,
   VERSION_STDOUT,
 } from './fixtures.ts'
 import { type FakeExecStep, setupExtension } from './harness.ts'
-
-const UVX_PREFIX = ['--from', 'memsearch[onnx]>=0.4.17,<0.5', 'memsearch']
 
 function setup(steps: FakeExecStep[], options: { clock?: () => Date } = {}) {
   const { calls, ctx, root, tools } = setupExtension(steps, { ...options, prefix: 'memory-status-' })

@@ -14,6 +14,7 @@ import {
   createFakePi,
   fakeModel,
   type FakeSession,
+  seedHome,
   userEntry,
 } from './harness.ts'
 
@@ -51,7 +52,7 @@ function setup(options: {
   createMemsearchExtension({
     complete,
     distillationTimeoutMs: options.timeoutMs ?? 1000,
-    env: options.env ?? {},
+    env: { HOME: seedHome(root), ...options.env },
     exec: createFakeExec([]).exec,
     now: () => new Date(2026, 7, 13, 22, 41),
     schedule: (task) => {

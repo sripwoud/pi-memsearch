@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createMemsearchExtension } from '../src/extension.ts'
-import { createFakeContext, createFakeExec, createFakePi, type FakeSession } from './harness.ts'
+import { createFakeContext, createFakeExec, createFakePi, type FakeSession, seedHome } from './harness.ts'
 
 const TRANSCRIPT = '/home/user/.pi/agent/sessions/--project--/2026-08-13_abc.jsonl'
 
@@ -24,7 +24,7 @@ function setup(options: { clock?: () => Date; env?: NodeJS.ProcessEnv; session?:
   const { pi, tools } = createFakePi()
   const clock = options.clock ?? (() => new Date(2026, 7, 13, 22, 41))
   createMemsearchExtension({
-    env: options.env ?? {},
+    env: { HOME: seedHome(root), ...options.env },
     exec: createFakeExec([]).exec,
     now: clock,
     sleep: async () => {},

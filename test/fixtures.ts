@@ -1,4 +1,7 @@
+import { MEMSEARCH_SPEC } from '../src/contract.ts'
 import type { ExecResult } from '../src/exec.ts'
+
+export const UVX_PREFIX = ['--from', MEMSEARCH_SPEC, 'memsearch']
 
 export const SEARCH_HITS = [
   {

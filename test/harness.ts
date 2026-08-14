@@ -1,6 +1,6 @@
 import type { Api, AssistantMessage, Model, StopReason, UserMessage } from '@earendil-works/pi-ai'
 import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } from '@earendil-works/pi-coding-agent'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Complete } from '../src/capture.ts'
@@ -108,6 +108,7 @@ export function createFakeContext(options: {
   branch?: SessionEntry[]
   model?: Model<Api> | undefined
   models?: Model<Api>[]
+  notices?: string[]
 }): ExtensionContext {
   const sessionManager = {
     getBranch: () => options.branch ?? [],
@@ -116,7 +117,19 @@ export function createFakeContext(options: {
     getSessionId: () => options.session.sessionId,
   }
   const modelRegistry = fakeCatalog(options.models ?? [])
-  return { cwd: options.cwd, model: options.model, modelRegistry, sessionManager } as unknown as ExtensionContext
+  const ui = {
+    notify: (message: string) => {
+      options.notices?.push(message)
+    },
+  }
+  return {
+    cwd: options.cwd,
+    hasUI: true,
+    model: options.model,
+    modelRegistry,
+    sessionManager,
+    ui,
+  } as unknown as ExtensionContext
 }
 
 export const TEST_SESSION: FakeSession = {
@@ -130,22 +143,42 @@ export interface SetupOptions {
   clock?: () => Date
   complete?: Complete
   env?: NodeJS.ProcessEnv
+  globalConfig?: boolean
   model?: Model<Api>
   models?: Model<Api>[]
+  onnxModel?: boolean
   prefix?: string
+  schedule?: (task: () => Promise<void>) => void
   sleep?: (ms: number) => Promise<void>
+}
+
+export const GLOBAL_CONFIG_TOML = '[embedding]\nprovider = "openai"\napi_key = "env:OPENAI_API_KEY"\n'
+
+export function seedHome(base: string, options: { globalConfig?: boolean; onnxModel?: boolean } = {}): string {
+  const home = join(base, 'home')
+  mkdirSync(home, { recursive: true })
+  if (options.globalConfig ?? true) {
+    mkdirSync(join(home, '.memsearch'), { recursive: true })
+    writeFileSync(join(home, '.memsearch', 'config.toml'), GLOBAL_CONFIG_TOML)
+  }
+  if (options.onnxModel ?? true)
+    mkdirSync(join(home, '.cache', 'huggingface', 'hub', 'models--gpahal--bge-m3-onnx-int8'), { recursive: true })
+  return home
 }
 
 export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}) {
   const root = mkdtempSync(join(tmpdir(), options.prefix ?? 'pi-memsearch-'))
   mkdirSync(join(root, '.git'))
+  const home = seedHome(root, { globalConfig: options.globalConfig ?? true, onnxModel: options.onnxModel ?? true })
   const { fire, pi, tools } = createFakePi()
   const { calls, exec } = createFakeExec(steps)
+  const notices: string[] = []
   const sleeps: number[] = []
   createMemsearchExtension({
-    env: options.env ?? {},
+    env: { HOME: home, ...options.env },
     exec,
     now: options.clock ?? (() => new Date(2026, 7, 13, 22, 41)),
+    ...(options.schedule ? { schedule: options.schedule } : {}),
     sleep: options.sleep
       ?? (async (ms) => {
         sleeps.push(ms)
@@ -154,10 +187,11 @@ export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}
   })(pi)
   const ctx = createFakeContext({
     cwd: root,
+    notices,
     session: TEST_SESSION,
     ...(options.branch ? { branch: options.branch } : {}),
     ...(options.model ? { model: options.model } : {}),
     ...(options.models ? { models: options.models } : {}),
   })
-  return { calls, ctx, fire, root, sleeps, tools }
+  return { calls, ctx, fire, home, notices, root, sleeps, tools }
 }

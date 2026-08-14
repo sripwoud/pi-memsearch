@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
 import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
+import { type BootstrapState, createBootstrap, ONNX_DOWNLOAD_NOTICE } from './bootstrap.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
 import { type ExpandedSection, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
 import { type ExecFn, execProcess } from './exec.ts'
@@ -62,6 +63,14 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       })
       await Promise.race([flushed, capped])
     })
+    const bootstrap = createBootstrap({ backend, env, now })
+
+    pi.on('session_start', (_event, ctx) => {
+      const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
+      schedule(async () => {
+        await bootstrap.ensure(scope.dir)
+      })
+    })
 
     pi.registerTool({
       description:
@@ -99,8 +108,10 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       description:
         'Search the shared project memory for past decisions, fixes and context. Returns top-k scored chunks; pass a chunk_hash to memory_expand for the full section.',
       execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
-        const { collection, options } = resolveTarget(ctx, env, signal)
+        const { collection, options, scope } = resolveTarget(ctx, env, signal)
         return orInstallInstructions(async () => {
+          await bootstrap.ensure(scope.dir)
+          if (await bootstrap.claimOnnxDownloadNotice()) ctx.ui.notify(ONNX_DOWNLOAD_NOTICE, 'info')
           const hits = await backend.search(
             params.query,
             collection,
@@ -141,13 +152,14 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => {
         const { collection, options, scope } = resolveTarget(ctx, env, signal)
         const availability = await backend.probe(options)
+        const bootstrapState = await bootstrap.ensure(scope.dir)
 
         const lines: string[] = []
         if (availability.available)
           lines.push('backend: available', `memsearch: ${availability.version} (pinned ${MEMSEARCH_SPEC})`)
         else
           lines.push(`backend: unavailable (${availability.reason})`, availability.instructions)
-        lines.push(`scope: ${scope.dir}`, `collection: ${collection}`)
+        lines.push(`scope: ${scope.dir}`, `collection: ${collection}`, describeBootstrap(bootstrapState))
         lines.push(...describeIndexHealth(scope.memoryDir))
         const failure = indexer.lastFailure()
         if (failure !== undefined) lines.push(`last index run: failed (${failure})`)
@@ -155,7 +167,10 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           lines.push(await describeChunkCount(backend, collection, options))
 
         const text = lines.join('\n')
-        return { content: [{ text, type: 'text' as const }], details: { availability, collection, scope: scope.dir } }
+        return {
+          content: [{ text, type: 'text' as const }],
+          details: { availability, bootstrap: bootstrapState, collection, scope: scope.dir },
+        }
       },
       label: 'Memory status',
       name: 'memory_status',
@@ -227,6 +242,17 @@ function unavailableResult(error: BackendUnavailableError) {
   return {
     content: [{ text: error.availability.instructions, type: 'text' as const }],
     details: { unavailable: error.availability.reason },
+  }
+}
+
+function describeBootstrap(state: BootstrapState): string {
+  switch (state.status) {
+    case 'bootstrapped':
+      return 'bootstrap: embedding.provider = onnx set globally (no prior config)'
+    case 'existing-config':
+      return `bootstrap: not needed (existing config: ${state.configPath})`
+    case 'failed':
+      return `bootstrap: failed (${state.reason})`
   }
 }
 
