@@ -56,6 +56,15 @@ export const LOCK_STDERR_0417 =
 export const LOCK_STDERR_0416 =
   'Traceback (most recent call last):\n  File "store.py", line 90, in _open\nMilvusException: Failed to open the local Milvus Lite database at /home/user/.memsearch/milvus.db. It may be corrupted or created by an older Milvus Lite release: another process holds the lock on \'/home/user/.memsearch/milvus.db\'\n'
 
+// Excerpted from a live 0.4.17 run over milvus-lite 3.2.0, which holds <db-dir>/LOCK with flock:
+// contention is named only by the DataDirLockedError chain, under a wrapper message memsearch also
+// uses for an incompatible database (INCOMPATIBLE_DB_STDERR below).
+export const LOCK_STDERR_MILVUS_LITE_3X =
+  "Failed to start MilvusLite server for /home/user/.memsearch/milvus.db\nTraceback (most recent call last):\n  File \"db.py\", line 954, in _acquire_lock\nBlockingIOError: [Errno 11] Resource temporarily unavailable\n\nmilvus_lite.exceptions.DataDirLockedError: another process holds the lock on '/home/user/.memsearch/milvus.db': [Errno 11] Resource temporarily unavailable\nRuntimeError: Failed to open the local Milvus Lite database. If this database was created with an older Milvus Lite release, it may not be compatible with Milvus Lite 3.x. Move the existing .db file aside, then rebuild the index from your source markdown files with 'memsearch index'.\n"
+
+export const INCOMPATIBLE_DB_STDERR =
+  'Traceback (most recent call last):\n  File "store.py", line 55, in __init__\nRuntimeError: Failed to open the local Milvus Lite database. If this database was created with an older Milvus Lite release, it may not be compatible with Milvus Lite 3.x. Move the existing .db file aside, then rebuild the index from your source markdown files with \'memsearch index\'.\n'
+
 export const CHUNK_NOT_FOUND_STDERR = 'Chunk not found: deadbeef00000000\n'
 
 export const MISSING_COLLECTION_STDERR =

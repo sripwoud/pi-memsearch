@@ -5,8 +5,10 @@ import type { ExecResult } from '../src/exec.ts'
 import {
   CONFIG_ERROR_STDERR,
   errResult,
+  INCOMPATIBLE_DB_STDERR,
   LOCK_STDERR_0416,
   LOCK_STDERR_0417,
+  LOCK_STDERR_MILVUS_LITE_3X,
   okResult,
   SEARCH_JSON,
   USAGE_ERROR_STDERR,
@@ -58,6 +60,29 @@ test('lock contention (0.4.17 phrasing) retries with backoff, invisibly to the c
   ok(text.includes('memory chunk'))
   equal(calls.length, 4)
   deepEqual(sleeps, [200, 500])
+})
+
+test('lock contention (milvus-lite 3.x phrasing) retries with backoff, invisibly to the caller', async () => {
+  const { calls, ctx, sleeps, tool } = setup([
+    okResult(VERSION_STDOUT),
+    errResult(1, LOCK_STDERR_MILVUS_LITE_3X),
+    okResult(SEARCH_JSON),
+  ])
+
+  const text = await search(tool, ctx)
+
+  ok(text.includes('memory chunk'))
+  equal(calls.length, 3)
+  deepEqual(sleeps, [200])
+})
+
+test('an incompatible database is not mistaken for lock contention', async () => {
+  const { calls, ctx, sleeps, tool } = setup([okResult(VERSION_STDOUT), errResult(1, INCOMPATIBLE_DB_STDERR)])
+
+  await rejects(() => search(tool, ctx), /Move the existing \.db file aside/)
+
+  equal(calls.length, 2)
+  deepEqual(sleeps, [])
 })
 
 test('exhausted retries surface the lock error', async () => {
