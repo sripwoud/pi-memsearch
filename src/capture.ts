@@ -8,7 +8,7 @@ import {
   serializeConversation,
 } from '@earendil-works/pi-coding-agent'
 import { resolveDistillationModel } from './distillation-model.ts'
-import { extractSettledExchange } from './exchange.ts'
+import { extractExchange, passesHardGates } from './exchange.ts'
 import { appendMemoryEntry } from './memory-file.ts'
 import { resolveProjectScope } from './scope.ts'
 
@@ -48,9 +48,10 @@ export function registerCapture(pi: ExtensionAPI, deps: CaptureDeps): void {
     const transcriptPath = ctx.sessionManager.getSessionFile()
     if (!transcriptPath) return
 
-    const exchange = extractSettledExchange(ctx.sessionManager.getBranch(), lastCapturedEntryId)
+    const exchange = extractExchange(ctx.sessionManager.getBranch(), lastCapturedEntryId)
     if (!exchange) return
     lastCapturedEntryId = exchange.lastEntryId
+    if (!passesHardGates(exchange.messages)) return
 
     const anchor = {
       entryId: exchange.lastEntryId,

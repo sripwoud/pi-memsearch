@@ -220,6 +220,20 @@ test('the same settled exchange is never captured twice', async () => {
   equal(readFileSync(file, 'utf8').match(/^### /gm)?.length, 1)
 })
 
+test('a gated exchange never becomes distillation input for the next capture', async () => {
+  const branch = [userEntry('u1', 'discarded aborted prompt'), assistantEntry('a1', 'partial', 'aborted')]
+  const { file, requests, settle } = setup({ branch })
+
+  await settle()
+  branch.push(userEntry('u2', 'second prompt'), assistantEntry('a2', 'second answer'))
+  await settle()
+
+  equal(requests.length, 1)
+  ok(!/discarded aborted prompt/.test(requests[0]?.transcript ?? ''))
+  match(requests[0]?.transcript ?? '', /second prompt/)
+  match(readFileSync(file, 'utf8'), /turn:a2/)
+})
+
 test('a later exchange captures only the messages since the last capture', async () => {
   const branch = [userEntry('u1', 'first prompt'), assistantEntry('a1', 'first answer')]
   const { file, requests, settle } = setup({ branch })

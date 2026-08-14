@@ -2,21 +2,24 @@ import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import type { SessionEntry, SessionMessageEntry } from '@earendil-works/pi-coding-agent'
 
-export interface SettledExchange {
+export interface Exchange {
   lastEntryId: string
   messages: AgentMessage[]
 }
 
-export function extractSettledExchange(branch: SessionEntry[], afterEntryId?: string): SettledExchange | undefined {
+export function extractExchange(branch: SessionEntry[], afterEntryId?: string): Exchange | undefined {
   const entries = exchangeWindow(branch, afterEntryId).filter(isMessageEntry)
   const last = entries.at(-1)
   if (!last) return undefined
+  return { lastEntryId: last.id, messages: entries.map((entry) => entry.message) }
+}
 
-  const messages = entries.map((entry) => entry.message)
-  if (!messages.some((message) => message.role === 'user')) return undefined
-  if (!hasAssistantText(messages)) return undefined
-  if (lastAssistant(messages)?.stopReason === 'aborted') return undefined
-  return { lastEntryId: last.id, messages }
+export function passesHardGates(messages: AgentMessage[]): boolean {
+  return (
+    messages.some((message) => message.role === 'user')
+    && hasAssistantText(messages)
+    && lastAssistant(messages)?.stopReason !== 'aborted'
+  )
 }
 
 function exchangeWindow(branch: SessionEntry[], afterEntryId: string | undefined): SessionEntry[] {
