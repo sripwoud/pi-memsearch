@@ -11,14 +11,19 @@ pi ships no built-in memory by design ("primitives, not features"). The existing
 
 ## Install
 
+Current release: [0.2.0-beta](CHANGELOG.md).
+
 Prerequisites: [uv](https://docs.astral.sh/uv/) (the only external dependency — memsearch runs through `uvx`, so there is no Python packaging to manage), pi >= 0.84.1 (0.84.x is the tested line), Node >= 22.19.
 
 ```sh
-pi install https://github.com/sripwoud/pi-memsearch      # all projects (~/.pi/settings.json)
-pi install https://github.com/sripwoud/pi-memsearch -l   # this project (.pi/settings.json)
+pi install https://github.com/sripwoud/pi-memsearch                # all projects (~/.pi/settings.json)
+pi install https://github.com/sripwoud/pi-memsearch -l             # this project (.pi/settings.json)
+pi install git:github.com/sripwoud/pi-memsearch@v0.2.0-beta        # pinned; `pi update` never advances it
 ```
 
-First run, once per machine: `uvx` resolves `memsearch[onnx]>=0.4.17,<0.5`, and the first embedding downloads the onnx model (~560 MB, ~10 s) — announced as a notice so the pause is not mistaken for a hang. No API key is involved: when no embedding provider is configured anywhere, the package sets `embedding.provider = onnx` in memsearch's global config once. An existing config is never touched.
+First run, once per machine: `uvx` resolves `memsearch[onnx]>=0.4.17,<0.5`, and the first embedding downloads the onnx model once (~560 MB — a ~10 s pause on a fast connection, announced as a notice so it is not mistaken for a hang). No API key is involved: when no embedding provider is configured anywhere, the package sets `embedding.provider = onnx` in memsearch's global config once. An existing config is never touched.
+
+Uninstall with `pi remove https://github.com/sripwoud/pi-memsearch`. The memory markdown under `.memsearch/` survives — it is yours, not the package's.
 
 ## What it does
 
@@ -36,6 +41,7 @@ First run, once per machine: `uvx` resolves `memsearch[onnx]>=0.4.17,<0.5`, and 
 Markdown is the source of truth; the vector index is derived and rebuildable at any time.
 
 - **Location**: `<project>/.memsearch/memory/YYYY-MM-DD.md`, one file per calendar day, appended to by every agent in the mesh.
+- **Git**: commit `.memsearch/` to share memory with collaborators, or gitignore it to keep it personal — the vector index lives in `~/.memsearch/milvus.db` either way, so the choice costs nothing.
 - **Project scope**: `$MEMSEARCH_DIR`, else the git root, else the working directory — memsearch's own resolution order.
 - **Collection**: `ms_<sanitized-basename>_<8 hex of sha256(abs path)>`, memsearch's derivation, so pi searches the same collection the other agents build.
 - **Entry shape**: `## Session HH:MM` once per session, `### HH:MM` per exchange, then a session anchor and third-person bullets:
@@ -59,6 +65,13 @@ After each exchange settles, two hard gates apply — the assistant produced tex
 1. `memory_search` — top-k scored chunks (default 5). Scores are normalized RRF ranks over hybrid dense + BM25 retrieval, not cosine similarity.
 2. `memory_expand` — the full section behind a chunk hash, plus its anchor. Loads no embedder, so it is cheap.
 3. The origin transcript at the anchor's path, read directly — last resort.
+
+```text
+you ▸ /recall how did we fix the flaky redis test?
+pi  ▸ memory_search → 5 chunks; top: 2026-08-13 "moved the hot cache to Redis with 5 minute TTLs" (0.81)
+      memory_expand → the full "### 22:41" section, with its session anchor
+      → answered at layer 2; the origin transcript was never opened
+```
 
 An empty result says so plainly instead of inviting invention.
 
@@ -91,9 +104,9 @@ Everything shared with the mesh — provider, model, chunking — lives in memse
 | `PI_MEMSEARCH_SEARCH_TIMEOUT_MS` | `30000`                                | Per-attempt timeout for `memory_search`                                   |
 | `MEMSEARCH_DIR`                  | unset                                  | memsearch's own scope override; the memory store and collection follow it |
 
-## When the backend is missing
+## Troubleshooting
 
-Markdown is the source of truth, so a missing `uv` or memsearch degrades rather than breaks:
+A missing `uv` or memsearch degrades rather than breaks:
 
 - Capture and `memory_write` keep appending to the daily file, and the snapshot keeps reading it.
 - `memory_search` and `memory_expand` return install instructions instead of an error.
@@ -101,6 +114,14 @@ Markdown is the source of truth, so a missing `uv` or memsearch degrades rather 
 - Once the backend is back, the next index makes everything written in the meantime searchable.
 
 `memory_status` is the one-step answer to "why doesn't search work": it reports what is missing, the active config, the index state (including memsearch's own `degraded` status and per-file failures), and the last index failure.
+
+| Symptom                                   | Likely cause                                                                               | Fix                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Search returns install instructions       | `uv` or memsearch missing                                                                  | Install [uv](https://docs.astral.sh/uv/); availability is re-probed mid-session |
+| First search pauses ~10 s                 | One-time onnx model download                                                               | Wait — the notice announces it                                                  |
+| A just-written memory is not found        | The debounced index (5 s after a write) has not run yet                                    | Retry in a moment; shutdown and session start also index                        |
+| Search finds nothing after the repo moved | The collection name hashes the absolute path                                               | The next session start catch-up indexes into the new collection                 |
+| Nothing is captured                       | `PI_MEMSEARCH_CAPTURE=off`, or the exchange failed a gate (no assistant text, aborted run) | `memory_status` shows the active config                                         |
 
 ## Unsupported
 
