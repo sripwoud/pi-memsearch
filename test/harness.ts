@@ -1,5 +1,6 @@
 import type { Api, AssistantMessage, Model, StopReason, UserMessage } from '@earendil-works/pi-ai'
 import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } from '@earendil-works/pi-coding-agent'
+import type { ModelCatalog } from '../src/distillation-model.ts'
 
 export interface FakeSession {
   sessionId: string
@@ -51,6 +52,13 @@ export function fakeModel(spec: { id: string; provider?: string; input?: number;
   } as Model<Api>
 }
 
+export function fakeCatalog(models: Model<Api>[]): ModelCatalog {
+  return {
+    find: (provider, modelId) => models.find((model) => model.provider === provider && model.id === modelId),
+    getAvailable: () => models,
+  }
+}
+
 export function userEntry(id: string, text: string): SessionEntry {
   const message: UserMessage = { content: text, role: 'user', timestamp: 0 }
   return { id, message, parentId: null, timestamp: '2026-08-13T22:40:00.000Z', type: 'message' }
@@ -72,17 +80,12 @@ export function createFakeContext(options: {
   model?: Model<Api> | undefined
   models?: Model<Api>[]
 }): ExtensionContext {
-  const models = options.models ?? []
   const sessionManager = {
     getBranch: () => options.branch ?? [],
     getLeafId: () => options.session.entryId,
     getSessionFile: () => options.session.transcriptPath,
     getSessionId: () => options.session.sessionId,
   }
-  const modelRegistry = {
-    find: (provider: string, modelId: string) =>
-      models.find((model) => model.provider === provider && model.id === modelId),
-    getAvailable: () => models,
-  }
+  const modelRegistry = fakeCatalog(options.models ?? [])
   return { cwd: options.cwd, model: options.model, modelRegistry, sessionManager } as unknown as ExtensionContext
 }

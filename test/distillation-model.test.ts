@@ -1,15 +1,7 @@
-import type { Api, Model } from '@earendil-works/pi-ai'
 import { equal, throws } from 'node:assert/strict'
 import { test } from 'node:test'
-import { type ModelCatalog, resolveDistillationModel } from '../src/distillation-model.ts'
-import { fakeModel } from './harness.ts'
-
-function catalog(models: Model<Api>[]): ModelCatalog {
-  return {
-    find: (provider, modelId) => models.find((m) => m.provider === provider && m.id === modelId),
-    getAvailable: () => models,
-  }
-}
+import { resolveDistillationModel } from '../src/distillation-model.ts'
+import { fakeCatalog as catalog, fakeModel } from './harness.ts'
 
 test('override with provider/model resolves through the registry, slashes in the id preserved', () => {
   const target = fakeModel({ id: 'anthropic/claude-haiku', provider: 'openrouter' })
