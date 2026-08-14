@@ -1,34 +1,15 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { deepEqual, equal, match, ok, rejects, throws } from 'node:assert/strict'
-import { mkdirSync, mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { test } from 'node:test'
 import { createMemsearchExtension } from '../src/extension.ts'
 import { deriveCollection } from '../src/scope.ts'
 import { enoentError, okResult, SEARCH_HITS, SEARCH_JSON, VERSION_STDOUT } from './fixtures.ts'
-import { createFakeContext, createFakeExec, createFakePi, type FakeExecStep, type FakeSession } from './harness.ts'
-
-const SESSION: FakeSession = {
-  entryId: 'ab12cd34',
-  sessionId: '3f2c9b1e-8d4a-4f6b-9c0d-1a2b3c4d5e6f',
-  transcriptPath: '/home/user/.pi/agent/sessions/--project--/2026-08-13_abc.jsonl',
-}
+import { createFakePi, type FakeExecStep, setupExtension } from './harness.ts'
 
 function setup(steps: FakeExecStep[], options: { env?: NodeJS.ProcessEnv } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'memory-search-'))
-  mkdirSync(join(root, '.git'))
-  const { pi, tools } = createFakePi()
-  const { calls, exec } = createFakeExec(steps)
-  createMemsearchExtension({
-    env: options.env ?? {},
-    exec,
-    now: () => new Date(2026, 7, 13, 22, 41),
-    sleep: async () => {},
-  })(pi)
+  const { calls, ctx, root, tools } = setupExtension(steps, { ...options, prefix: 'memory-search-' })
   const tool = tools.get('memory_search')
   ok(tool, 'memory_search tool is registered')
-  const ctx = createFakeContext({ cwd: root, session: SESSION })
   return { calls, ctx, root, tool }
 }
 

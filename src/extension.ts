@@ -1,11 +1,11 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
 import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
 import { type ExpandedSection, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
 import { type ExecFn, execProcess } from './exec.ts'
 import { appendMemoryEntry, localDateKey } from './memory-file.ts'
-import { deriveCollection, resolveProjectScope } from './scope.ts'
+import { deriveCollection, type ProjectScope, resolveProjectScope } from './scope.ts'
 import { buildSnapshot } from './snapshot.ts'
 
 export interface MemsearchDeps {
@@ -70,10 +70,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       description:
         'Search the shared project memory for past decisions, fixes and context. Returns top-k scored chunks; pass a chunk_hash to memory_expand for the full section.',
       execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
-        const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
-        const collection = deriveCollection(scope.dir)
-        const options = signal ? { signal } : {}
-        try {
+        const { collection, options } = resolveTarget(ctx, env, signal)
+        return orInstallInstructions(async () => {
           const hits = await backend.search(
             params.query,
             collection,
@@ -81,10 +79,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           )
           const text = hits.length === 0 ? `No memories found for "${params.query}".` : formatHits(hits)
           return { content: [{ text, type: 'text' as const }], details: { hits } }
-        } catch (error) {
-          if (error instanceof BackendUnavailableError) return unavailableResult(error)
-          throw error
-        }
+        })
       },
       label: 'Memory search',
       name: 'memory_search',
@@ -98,16 +93,11 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       description:
         'Expand a memory chunk (by chunk_hash from memory_search) into its full section, with the session anchor pointing at the original transcript.',
       execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
-        const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
-        const collection = deriveCollection(scope.dir)
-        const options = signal ? { signal } : {}
-        try {
+        const { collection, options } = resolveTarget(ctx, env, signal)
+        return orInstallInstructions(async () => {
           const section = await backend.expand(params.chunk_hash, collection, options)
           return { content: [{ text: formatSection(section), type: 'text' as const }], details: { section } }
-        } catch (error) {
-          if (error instanceof BackendUnavailableError) return unavailableResult(error)
-          throw error
-        }
+        })
       },
       label: 'Memory expand',
       name: 'memory_expand',
@@ -120,9 +110,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       description:
         'Diagnose the shared project memory backend: uv/memsearch availability and version, project scope, collection, and indexed chunk count.',
       execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => {
-        const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
-        const collection = deriveCollection(scope.dir)
-        const options = signal ? { signal } : {}
+        const { collection, options, scope } = resolveTarget(ctx, env, signal)
         const availability = await backend.probe(options)
 
         const lines: string[] = []
@@ -172,6 +160,26 @@ function createBackgroundQueue(): (task: () => Promise<void>) => void {
   let tail: Promise<void> = Promise.resolve()
   return (task) => {
     tail = tail.then(task).catch(() => {})
+  }
+}
+
+interface RecallTarget {
+  collection: string
+  options: { signal?: AbortSignal }
+  scope: ProjectScope
+}
+
+function resolveTarget(ctx: ExtensionContext, env: NodeJS.ProcessEnv, signal: AbortSignal | undefined): RecallTarget {
+  const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
+  return { collection: deriveCollection(scope.dir), options: signal ? { signal } : {}, scope }
+}
+
+async function orInstallInstructions<T>(run: () => Promise<T>) {
+  try {
+    return await run()
+  } catch (error) {
+    if (error instanceof BackendUnavailableError) return unavailableResult(error)
+    throw error
   }
 }
 
