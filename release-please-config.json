@@ -5,12 +5,8 @@
       "release-type": "node",
       "package-name": "pi-memsearch",
       "changelog-path": "CHANGELOG.md",
-      "versioning": "prerelease",
-      "prerelease": true,
-      "prerelease-type": "beta",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": false,
-      "draft": false
+      "draft": false,
+      "extra-files": [{ "type": "generic", "path": "README.md" }]
     }
   },
   "bootstrap-sha": "bc6dd92cd44dff78a4fff678da9ac15de86b54d5",
