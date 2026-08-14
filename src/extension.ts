@@ -1,7 +1,8 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
-import { appendMemoryEntry } from './memory-file.ts'
+import { appendMemoryEntry, localDateKey } from './memory-file.ts'
 import { resolveProjectScope } from './scope.ts'
+import { buildSnapshot } from './snapshot.ts'
 
 export interface MemsearchDeps {
   env: NodeJS.ProcessEnv
@@ -42,6 +43,30 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           description: 'Memory entry: third-person markdown bullets, in the primary language of the conversation',
         }),
       }),
+    })
+
+    if (env['PI_MEMSEARCH_SNAPSHOT'] === 'off') return
+
+    let snapshot: string | undefined
+    let snapshotDate: string | undefined
+
+    const refreshSnapshot = (cwd: string): string => {
+      const timestamp = now()
+      const scope = resolveProjectScope({ baseDir: cwd, env })
+      snapshot = buildSnapshot(scope.memoryDir, timestamp)
+      snapshotDate = localDateKey(timestamp)
+      return snapshot
+    }
+
+    pi.on('session_start', (_event, ctx) => {
+      refreshSnapshot(ctx.cwd)
+    })
+    pi.on('session_compact', (_event, ctx) => {
+      refreshSnapshot(ctx.cwd)
+    })
+    pi.on('before_agent_start', (event, ctx) => {
+      const block = snapshot !== undefined && snapshotDate === localDateKey(now()) ? snapshot : refreshSnapshot(ctx.cwd)
+      return { systemPrompt: `${event.systemPrompt}\n\n${block}` }
     })
   }
 }

@@ -6,19 +6,33 @@ export interface FakeSession {
   transcriptPath: string | undefined
 }
 
+type EventHandler = (event: unknown, ctx: ExtensionContext) => unknown
+
 export interface FakePi {
   pi: ExtensionAPI
   tools: Map<string, ToolDefinition>
+  fire(event: string, payload: object, ctx: ExtensionContext): Promise<unknown[]>
 }
 
 export function createFakePi(): FakePi {
   const tools = new Map<string, ToolDefinition>()
+  const handlers = new Map<string, EventHandler[]>()
   const pi = {
+    on(event: string, handler: EventHandler) {
+      handlers.set(event, [...(handlers.get(event) ?? []), handler])
+    },
     registerTool(tool: ToolDefinition) {
       tools.set(tool.name, tool)
     },
-  } as ExtensionAPI
-  return { pi, tools }
+  } as unknown as ExtensionAPI
+
+  async function fire(event: string, payload: object, ctx: ExtensionContext): Promise<unknown[]> {
+    const results: unknown[] = []
+    for (const handler of handlers.get(event) ?? []) results.push(await handler({ type: event, ...payload }, ctx))
+    return results
+  }
+
+  return { fire, pi, tools }
 }
 
 export function createFakeContext(options: { cwd: string; session: FakeSession }): ExtensionContext {
