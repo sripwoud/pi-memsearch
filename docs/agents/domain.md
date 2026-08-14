@@ -17,8 +17,7 @@ Single-context repo:
 /
 ├── CONTEXT.md
 ├── docs/adr/
-│   ├── 0001-milvus-lite-only-in-v1.md
-│   └── 0002-reuse-memsearch-collection-derivation.md
+│   └── 0001-mesh-parity.md
 └── src/
 ```
 
