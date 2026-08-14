@@ -86,7 +86,7 @@ export function createBackend(deps: BackendDeps): Backend {
         )
         if (result.exitCode !== 0 && isLockContention(result.stderr) && attempt < BACKOFF_DELAYS_MS.length) {
           await deps.sleep(BACKOFF_DELAYS_MS[attempt] as number)
-          continue
+          if (!options.signal?.aborted) continue
         }
         return result
       }
@@ -100,7 +100,12 @@ export function createBackend(deps: BackendDeps): Backend {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT')
         return { available: false, instructions: UV_INSTRUCTIONS, reason: 'uv-missing' }
-      throw error
+      if (error instanceof Error && error.name === 'AbortError') throw error
+      return {
+        available: false,
+        instructions: memsearchInstructions(`spawn failed: ${error instanceof Error ? error.message : String(error)}`),
+        reason: 'memsearch-unavailable',
+      }
     }
     if (result.exitCode !== 0) {
       return {
@@ -152,7 +157,7 @@ export function createBackend(deps: BackendDeps): Backend {
   ): Promise<SearchHit[]> {
     await ensureAvailable(options)
     const topK = options.topK ?? DEFAULT_TOP_K
-    const args = ['search', query, '-j', '-k', String(topK), '-c', collection]
+    const args = ['search', '-j', '-k', String(topK), '-c', collection, '--', query]
     const result = await invoke(args, searchTimeoutMs, options)
     if (result.exitCode !== 0) throw commandError('search', result, searchTimeoutMs)
     return parseSearchHits(result.stdout)
@@ -160,7 +165,7 @@ export function createBackend(deps: BackendDeps): Backend {
 
   async function expand(chunkHash: string, collection: string, options: CommandOptions = {}): Promise<ExpandedSection> {
     await ensureAvailable(options)
-    const result = await invoke(['expand', chunkHash, '-j', '-c', collection], EXPAND_TIMEOUT_MS, options)
+    const result = await invoke(['expand', '-j', '-c', collection, '--', chunkHash], EXPAND_TIMEOUT_MS, options)
     if (result.exitCode !== 0) throw commandError('expand', result, EXPAND_TIMEOUT_MS)
     return parseExpandedSection(result.stdout)
   }

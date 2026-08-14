@@ -58,6 +58,13 @@ export const MISSING_COLLECTION_STDERR =
 
 export const CONFIG_ERROR_STDERR = 'Configuration error: environment variable OPENAI_API_KEY is not set\n'
 
+export const USAGE_ERROR_STDERR =
+  "Usage: memsearch search [OPTIONS] QUERY\nTry 'memsearch search --help' for help.\n\nError: No such option: -x\n"
+
+export function eaccesError(): Error {
+  return Object.assign(new Error('spawn uvx EACCES'), { code: 'EACCES' })
+}
+
 export function okResult(stdout: string): ExecResult {
   return { exitCode: 0, signal: null, stderr: '', stdout }
 }

@@ -13,6 +13,7 @@ import {
   LOCK_STDERR_0417,
   okResult,
   SEARCH_JSON,
+  USAGE_ERROR_STDERR,
   VERSION_STDOUT,
 } from './fixtures.ts'
 import { createFakeContext, createFakeExec, createFakePi, type FakeExecStep, type FakeSession } from './harness.ts'
@@ -23,7 +24,7 @@ const SESSION: FakeSession = {
   transcriptPath: '/home/user/.pi/agent/sessions/--project--/2026-08-13_abc.jsonl',
 }
 
-function setup(steps: FakeExecStep[]) {
+function setup(steps: FakeExecStep[], sleepImpl?: (ms: number) => Promise<void>) {
   const root = mkdtempSync(join(tmpdir(), 'memory-queue-'))
   mkdirSync(join(root, '.git'))
   const { pi, tools } = createFakePi()
@@ -33,9 +34,10 @@ function setup(steps: FakeExecStep[]) {
     env: {},
     exec,
     now: () => new Date(2026, 7, 13, 22, 41),
-    sleep: async (ms) => {
-      sleeps.push(ms)
-    },
+    sleep: sleepImpl
+      ?? (async (ms) => {
+        sleeps.push(ms)
+      }),
   })(pi)
   const tool = tools.get('memory_search')
   ok(tool, 'memory_search tool is registered')
@@ -96,6 +98,29 @@ test('a non-lock failure is not retried', async () => {
 
   equal(calls.length, 2)
   deepEqual(sleeps, [])
+})
+
+test('a click usage error (exit 2) fails loudly without retry', async () => {
+  const { calls, ctx, sleeps, tool } = setup([okResult(VERSION_STDOUT), errResult(2, USAGE_ERROR_STDERR)])
+
+  await rejects(() => search(tool, ctx), /No such option/)
+
+  equal(calls.length, 2)
+  deepEqual(sleeps, [])
+})
+
+test('an abort during backoff stops further retry attempts', async () => {
+  const controller = new AbortController()
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), errResult(1, LOCK_STDERR_0417), okResult(SEARCH_JSON)],
+    async () => {
+      controller.abort()
+    },
+  )
+
+  await rejects(() => search(tool, ctx, controller.signal))
+
+  equal(calls.length, 2)
 })
 
 test('concurrent tool calls are serialized through the single-flight queue', async () => {

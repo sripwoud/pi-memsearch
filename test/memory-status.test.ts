@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import { createMemsearchExtension } from '../src/extension.ts'
 import { deriveCollection } from '../src/scope.ts'
 import {
+  eaccesError,
   enoentError,
   errResult,
   MISSING_COLLECTION_STDERR,
@@ -83,6 +84,15 @@ test('missing uv degrades to install instructions instead of an error', async ()
   match(text, /unavailable/)
   match(text, /astral\.sh\/uv\/install\.sh/)
   equal(calls.length, 1)
+})
+
+test('a spawn failure other than enoent still degrades to instructions', async () => {
+  const { ctx, tool } = setup([eaccesError()])
+
+  const text = await status(tool, ctx)
+
+  match(text, /unavailable/)
+  match(text, /EACCES/)
 })
 
 test('a failed probe is cached with a short negative ttl, then retried', async () => {

@@ -51,12 +51,13 @@ test('returns scored chunks for the default top-k of 5', async () => {
   deepEqual(calls[1]?.args.slice(2), [
     'memsearch',
     'search',
-    'redis cache',
     '-j',
     '-k',
     '5',
     '-c',
     deriveCollection(root),
+    '--',
+    'redis cache',
   ])
   equal(calls[1]?.options.timeoutMs, 30_000)
   const [first, second] = SEARCH_HITS
@@ -94,6 +95,15 @@ test('non-json output fails loudly', async () => {
   const { ctx, tool } = setup([okResult(VERSION_STDOUT), okResult('No results found.')])
 
   await rejects(() => search(tool, ctx, { query: 'redis' }), /drift/)
+})
+
+test('a query starting with a dash is never parsed as an option', async () => {
+  const { calls, ctx, tool } = setup([okResult(VERSION_STDOUT), okResult(SEARCH_JSON)])
+
+  await search(tool, ctx, { query: '-k weird query' })
+
+  const args = calls[1]?.args ?? []
+  deepEqual(args.slice(args.indexOf('--')), ['--', '-k weird query'])
 })
 
 test('missing uv returns install instructions instead of an error', async () => {

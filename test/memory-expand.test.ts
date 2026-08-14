@@ -47,10 +47,11 @@ test('returns the full section for a chunk hash', async () => {
   deepEqual(calls[1]?.args.slice(2), [
     'memsearch',
     'expand',
-    EXPAND_RESULT.chunk_hash,
     '-j',
     '-c',
     deriveCollection(root),
+    '--',
+    EXPAND_RESULT.chunk_hash,
   ])
   equal(calls[1]?.options.timeoutMs, 10_000)
   ok(text.includes(EXPAND_RESULT.content))

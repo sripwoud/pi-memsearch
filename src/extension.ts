@@ -201,7 +201,7 @@ function formatSection(section: ExpandedSection): string {
   if (section.anchor) {
     lines.push(
       '',
-      `origin: session ${section.anchor.session} turn ${section.anchor.turn}`,
+      `origin: session ${section.anchor.session} entry ${section.anchor.turn}`,
       `transcript: ${section.anchor.transcript}`,
     )
   }
