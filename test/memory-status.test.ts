@@ -1,5 +1,7 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { deepEqual, equal, match, ok } from 'node:assert/strict'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { deriveCollection } from '../src/scope.ts'
 import {
@@ -90,6 +92,83 @@ test('a failed probe is cached with a short negative ttl, then retried', async (
   const text = await status(tool, ctx)
   ok(text.includes('memsearch: 0.4.17'))
   equal(calls.length, 3)
+})
+
+function writeIndexState(root: string, state: object): void {
+  mkdirSync(join(root, '.memsearch'), { recursive: true })
+  writeFileSync(join(root, '.memsearch', '.index-state.json'), JSON.stringify(state))
+}
+
+test('without an index-state file the index health reads as unrecorded', async () => {
+  const { ctx, tool } = setup([okResult(VERSION_STDOUT), okResult(STATS_STDOUT)])
+
+  const text = await status(tool, ctx)
+
+  ok(text.includes('index: no state recorded yet'))
+})
+
+test('an ok index state reports the last completed run', async () => {
+  const { ctx, root, tool } = setup([okResult(VERSION_STDOUT), okResult(STATS_STDOUT)])
+  writeIndexState(root, {
+    failed_files: [],
+    last_completed_at: '2026-08-14T07:00:05Z',
+    schema_version: 1,
+    status: 'ok',
+  })
+
+  const text = await status(tool, ctx)
+
+  ok(text.includes('index: ok (last indexed 2026-08-14T07:00:05Z)'))
+})
+
+test('a degraded index state surfaces the failed files', async () => {
+  const { ctx, root, tool } = setup([okResult(VERSION_STDOUT), okResult(STATS_STDOUT)])
+  const failed = join(root, '.memsearch', 'memory', '2026-08-13.md')
+  writeIndexState(root, {
+    failed_files: [{ error: 'UnicodeDecodeError: boom', path: failed }],
+    last_error: '1 file(s) failed during indexing.',
+    schema_version: 1,
+    status: 'degraded',
+  })
+
+  const text = await status(tool, ctx)
+
+  ok(text.includes('index: degraded (1 failed file(s))'))
+  ok(text.includes(`failed: ${failed} (UnicodeDecodeError: boom)`))
+})
+
+test('an error index state surfaces the last error', async () => {
+  const { ctx, root, tool } = setup([okResult(VERSION_STDOUT), okResult(STATS_STDOUT)])
+  writeIndexState(root, {
+    failed_files: [],
+    last_error: 'RuntimeError: could not open the database',
+    schema_version: 1,
+    status: 'error',
+  })
+
+  const text = await status(tool, ctx)
+
+  ok(text.includes('index: error (RuntimeError: could not open the database)'))
+})
+
+test('an unreadable index-state file is reported instead of crashing the status tool', async () => {
+  const { ctx, root, tool } = setup([okResult(VERSION_STDOUT), okResult(STATS_STDOUT)])
+  mkdirSync(join(root, '.memsearch'), { recursive: true })
+  writeFileSync(join(root, '.memsearch', '.index-state.json'), '{not json')
+
+  const text = await status(tool, ctx)
+
+  match(text, /index: state unreadable/)
+})
+
+test('index health is reported even when the backend is unavailable', async () => {
+  const { ctx, root, tool } = setup([enoentError()])
+  writeIndexState(root, { failed_files: [], schema_version: 1, status: 'ok' })
+
+  const text = await status(tool, ctx)
+
+  match(text, /unavailable/)
+  ok(text.includes('index: ok'))
 })
 
 test('a missing collection reads as zero indexed chunks', async () => {

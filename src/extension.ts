@@ -4,6 +4,7 @@ import { type Backend, BackendUnavailableError, createBackend } from './backend.
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
 import { type ExpandedSection, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
 import { type ExecFn, execProcess } from './exec.ts'
+import { type IndexState, readIndexState } from './index-state.ts'
 import { appendMemoryEntry, localDateKey } from './memory-file.ts'
 import { deriveCollection, type ProjectScope, resolveProjectScope } from './scope.ts'
 import { buildSnapshot } from './snapshot.ts'
@@ -119,6 +120,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         else
           lines.push(`backend: unavailable (${availability.reason})`, availability.instructions)
         lines.push(`scope: ${scope.dir}`, `collection: ${collection}`)
+        lines.push(...describeIndexHealth(scope.memoryDir))
         if (availability.available)
           lines.push(await describeChunkCount(backend, collection, options))
 
@@ -214,6 +216,28 @@ function formatSection(section: ExpandedSection): string {
     )
   }
   return lines.join('\n')
+}
+
+function describeIndexHealth(memoryDir: string): string[] {
+  let state: IndexState | undefined
+  try {
+    state = readIndexState(memoryDir)
+  } catch (error) {
+    return [`index: state unreadable (${error instanceof Error ? error.message : String(error)})`]
+  }
+  if (!state) return ['index: no state recorded yet']
+  const lines = [describeIndexStatus(state)]
+  for (const failure of state.failedFiles) lines.push(`  failed: ${failure.path} (${failure.error})`)
+  return lines
+}
+
+function describeIndexStatus(state: IndexState): string {
+  if (state.status === 'ok')
+    return state.lastCompletedAt === undefined ? 'index: ok' : `index: ok (last indexed ${state.lastCompletedAt})`
+  if (state.status === 'degraded') return `index: degraded (${state.failedFiles.length} failed file(s))`
+  if (state.status === 'error')
+    return state.lastError === undefined ? 'index: error' : `index: error (${state.lastError})`
+  return `index: ${state.status}`
 }
 
 async function describeChunkCount(
