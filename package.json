@@ -1,6 +1,6 @@
 {
   "name": "pi-memsearch",
-  "version": "0.1.0",
+  "version": "0.2.0-beta",
   "description": "memsearch-backed long-term memory for pi",
   "keywords": [
     "pi-package",
@@ -19,9 +19,15 @@
     "src"
   ],
   "pi": {
-    "extensions": ["./extensions/memsearch.ts"],
-    "prompts": ["./prompts"],
-    "skills": ["./skills"]
+    "extensions": [
+      "./extensions/memsearch.ts"
+    ],
+    "prompts": [
+      "./prompts"
+    ],
+    "skills": [
+      "./skills"
+    ]
   },
   "engines": {
     "node": ">=22.19.0"
