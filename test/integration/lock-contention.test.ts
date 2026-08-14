@@ -24,11 +24,12 @@ describe('lock contention against real memsearch', { skip: SKIP_UNLESS_GATED }, 
     const holder = await holdDataDirLock(live.dataDirLockPath)
     const search = live.toolText('memory_search', { query: 'what is the retry backoff for lock contention?' })
 
+    // Releasing only once an invocation has actually been locked out puts the retry on the critical
+    // path deterministically; waitForLockedOutAttempt throws if contention never happens.
     await waitForLockedOutAttempt(live)
     await holder.release()
     const text = await search
 
     ok(text.includes('retry backoff'), `search did not recall the memory:\n${text}`)
-    ok(live.lockedOutAttempts() >= 1, 'at least one invocation was locked out and retried')
   })
 })

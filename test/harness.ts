@@ -166,9 +166,14 @@ export function seedHome(base: string, options: { globalConfig?: boolean; onnxMo
   return home
 }
 
-export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}) {
-  const root = mkdtempSync(join(tmpdir(), options.prefix ?? 'pi-memsearch-'))
+export function createProjectRoot(prefix: string): string {
+  const root = mkdtempSync(join(tmpdir(), prefix))
   mkdirSync(join(root, '.git'))
+  return root
+}
+
+export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}) {
+  const root = createProjectRoot(options.prefix ?? 'pi-memsearch-')
   const home = seedHome(root, { globalConfig: options.globalConfig ?? true, onnxModel: options.onnxModel ?? true })
   const { fire, pi, tools } = createFakePi()
   const { calls, exec } = createFakeExec(steps)

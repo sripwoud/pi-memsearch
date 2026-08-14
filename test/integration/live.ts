@@ -1,14 +1,14 @@
 import type { ExtensionContext, SessionEntry, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Complete } from '../../src/capture.ts'
 import { type ExecFn, execProcess } from '../../src/exec.ts'
 import { createMemsearchExtension } from '../../src/extension.ts'
 import { SHUTDOWN_CAP_MS } from '../../src/indexer.ts'
 import { deriveCollection } from '../../src/scope.ts'
-import { createFakeContext, createFakePi, fakeModel, TEST_SESSION } from '../harness.ts'
+import { createFakeContext, createFakePi, createProjectRoot, fakeModel, TEST_SESSION } from '../harness.ts'
 
 export const SKIP_UNLESS_GATED: string | false = process.env['PI_MEMSEARCH_IT'] === '1'
   ? false
@@ -26,14 +26,12 @@ export interface LiveHarness {
   home: string
   lockedOutAttempts(): number
   memoryDir: string
-  root: string
   settle(): Promise<void>
   toolText(name: string, params: object): Promise<string>
 }
 
 export function setupLive(options: { complete?: Complete } = {}): LiveHarness {
-  const root = mkdtempSync(join(tmpdir(), 'pi-memsearch-it-'))
-  mkdirSync(join(root, '.git'))
+  const root = createProjectRoot('pi-memsearch-it-')
   const home = join(root, 'home')
   mkdirSync(home)
 
@@ -59,7 +57,10 @@ export function setupLive(options: { complete?: Complete } = {}): LiveHarness {
     schedule: (task) => {
       pending.push(task())
     },
-    sleep: waitOrNeverForTheShutdownCap,
+    // Real timers for the debounce and the retry backoff: they must keep the event loop alive or the
+    // suite exits mid-retry. Never for the shutdown cap, so the suite waits for the real index
+    // instead of racing it against a wall clock.
+    sleep: (ms) => (ms >= SHUTDOWN_CAP_MS ? NEVER : wait(ms)),
     ...(options.complete ? { complete: options.complete } : {}),
   })(pi)
 
@@ -78,7 +79,6 @@ export function setupLive(options: { complete?: Complete } = {}): LiveHarness {
     home,
     lockedOutAttempts: () => lockedOut.length,
     memoryDir: join(root, '.memsearch', 'memory'),
-    root,
     async settle() {
       while (pending.length > 0) await Promise.all(pending.splice(0))
     },
@@ -86,19 +86,12 @@ export function setupLive(options: { complete?: Complete } = {}): LiveHarness {
   }
 }
 
+const NEVER = new Promise<void>(() => {})
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms)
   })
-}
-
-/**
- * Real timers for the debounce and the retry backoff — they must keep the event loop alive or the
- * suite exits mid-retry — but never the shutdown cap: the suite waits for the real index instead
- * of racing it against a wall clock.
- */
-function waitOrNeverForTheShutdownCap(ms: number): Promise<void> {
-  return ms >= SHUTDOWN_CAP_MS ? new Promise<void>(() => {}) : wait(ms)
 }
 
 async function runTool(

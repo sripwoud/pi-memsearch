@@ -1,9 +1,9 @@
 import { equal, match, ok } from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
+import { MEMSEARCH_SPEC } from '../../src/contract.ts'
 import { readIndexState } from '../../src/index-state.ts'
-import { localDateKey } from '../../src/memory-file.ts'
 import { assistantEntry, TEST_SESSION, userEntry } from '../harness.ts'
 import { setupLive, SKIP_UNLESS_GATED } from './live.ts'
 
@@ -16,6 +16,7 @@ const BULLETS = [
 describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }, () => {
   const live = setupLive({ complete: async () => BULLETS })
   let chunkHash: string | undefined
+  let dailyFile: string | undefined
 
   test('session start bootstraps the zero-key onnx provider', async () => {
     await live.fire('session_start')
@@ -41,8 +42,10 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
     await live.fire('agent_settled')
     await live.settle()
 
-    const file = join(live.memoryDir, `${localDateKey(new Date())}.md`)
-    const content = readFileSync(file, 'utf8')
+    const written = readdirSync(live.memoryDir)
+    equal(written.length, 1, `capture wrote one daily file, found ${written.join(', ')}`)
+    dailyFile = join(live.memoryDir, written[0] as string)
+    const content = readFileSync(dailyFile, 'utf8')
     ok(content.includes(BULLETS), 'the distilled bullets landed in the daily memory file')
     ok(content.includes(`<!-- session:${TEST_SESSION.sessionId} turn:a1 transcript:${TEST_SESSION.transcriptPath} -->`))
   })
@@ -62,7 +65,7 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
     })
 
     ok(text.includes('flux-capacitor'), `search returned no matching chunk:\n${text}`)
-    ok(text.includes(join(live.memoryDir, `${localDateKey(new Date())}.md`)))
+    ok(dailyFile && text.includes(dailyFile), 'the hit points at the daily file capture wrote')
     chunkHash = /\| chunk (\S+) \|/.exec(text)?.[1]
     ok(chunkHash, 'search rendered a chunk hash to expand')
   })
@@ -80,7 +83,8 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
     const text = await live.toolText('memory_status', {})
 
     match(text, /backend: available/)
-    match(text, /memsearch: 0\.4\.\d+ \(pinned memsearch\[onnx\]/)
+    match(text, /memsearch: \d+\.\d+\.\d+ \(pinned /)
+    ok(text.includes(`(pinned ${MEMSEARCH_SPEC})`))
     ok(text.includes(`collection: ${live.collection}`))
     match(text, /index: ok/)
     match(text, /indexed chunks: [1-9]\d*/)
