@@ -49,19 +49,19 @@ function injectedBlock(systemPrompt: string | undefined): string {
   return systemPrompt.slice(BASE_PROMPT.length)
 }
 
-test('with no daily files the snapshot degrades to usage instructions only', async () => {
+test('with no daily memory files the snapshot degrades to usage instructions only', async () => {
   const { ctx, fire } = setup()
   await startSession(fire, ctx)
 
   const block = injectedBlock(await prompt(fire, ctx))
 
   ok(block.includes('memory_write'), 'instructions tell the model how to write memory')
-  ok(!block.includes('### Today'), 'no today section without a daily file')
-  ok(!block.includes('### Yesterday'), 'no yesterday section without a daily file')
+  ok(!block.includes('### Today'), 'no today section without a daily memory file')
+  ok(!block.includes('### Yesterday'), 'no yesterday section without a daily memory file')
   ok(block.length <= 1100, `instructions stay within ~1K chars, got ${block.length}`)
 })
 
-test("the snapshot includes the tails of today's and yesterday's daily files", async () => {
+test("the snapshot includes the tails of today's and yesterday's daily memory files", async () => {
   const { ctx, fire, memoryDir } = setup()
   writeFileSync(join(memoryDir, '2026-08-14.md'), '- decided today\n')
   writeFileSync(join(memoryDir, '2026-08-13.md'), '- decided yesterday\n')
@@ -75,7 +75,7 @@ test("the snapshot includes the tails of today's and yesterday's daily files", a
   ok(block.includes('- decided yesterday'))
 })
 
-test('an empty daily file degrades to instructions only', async () => {
+test('an empty daily memory file degrades to instructions only', async () => {
   const { ctx, fire, memoryDir } = setup()
   writeFileSync(join(memoryDir, '2026-08-14.md'), '\n\n')
   await startSession(fire, ctx)
@@ -85,7 +85,7 @@ test('an empty daily file degrades to instructions only', async () => {
   ok(!block.includes('### Today'))
 })
 
-test('the snapshot is byte-identical across prompts even when the daily file grows', async () => {
+test('the snapshot is byte-identical across prompts even when the daily memory file grows', async () => {
   const { ctx, fire, memoryDir } = setup()
   const file = join(memoryDir, '2026-08-14.md')
   writeFileSync(file, '- first entry\n')
@@ -141,7 +141,7 @@ test('day rollover refreshes the snapshot on the next prompt', async () => {
   const second = await prompt(fire, ctx)
 
   notEqual(second, first)
-  ok(!second?.includes('### Today'), 'no daily file exists for the new day')
+  ok(!second?.includes('### Today'), 'no daily memory file exists for the new day')
   ok(second?.includes('### Yesterday (2026-08-14)'))
   ok(second?.includes('- written on the 14th'))
 })

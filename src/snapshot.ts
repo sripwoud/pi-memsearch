@@ -7,7 +7,7 @@ const TRUNCATION_MARKER = '[earlier entries truncated]'
 
 const INSTRUCTIONS = `## Project memory
 
-This project keeps long-term memory in \`.memsearch/memory/\` — daily markdown files shared by every coding agent working in this repository. Recent entries are included below; each is timestamped and anchored to the session that produced it.
+The project memory store (\`.memsearch/memory/\`) holds one daily memory file per calendar day, shared by every coding agent working in this repository. Recent entries are included below; each is timestamped and anchored to the session that produced it.
 
 - Call the \`memory_write\` tool when the user asks you to remember something, or when a decision, fix, or fact should survive this session. Write third-person markdown bullets in the primary language of the conversation.
 - Check the entries below before re-deriving how something was already solved or decided.
@@ -37,8 +37,8 @@ function daySection(memoryDir: string, label: string, date: Date, budget: number
 
 function tailWithinBudget(content: string, budget: number): string {
   if (content.length <= budget) return content
-  const hard = content.slice(content.length - budget)
-  const newline = hard.indexOf('\n')
-  const aligned = newline === -1 ? hard : hard.slice(newline + 1)
-  return aligned === '' ? hard : aligned
+  const hardCut = content.slice(content.length - budget)
+  const newline = hardCut.indexOf('\n')
+  const lineAligned = newline === -1 ? hardCut : hardCut.slice(newline + 1)
+  return lineAligned === '' ? hardCut : lineAligned
 }
