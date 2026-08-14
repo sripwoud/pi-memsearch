@@ -34,7 +34,7 @@ Uninstall with `pi remove https://github.com/sripwoud/pi-memsearch`. The memory 
 | Indexing         | `session_start` / write / shutdown | Catch-up index, debounced index 5 s after a write, final index at shutdown            |
 | Recall           | `/recall`, recall skill, two tools | `memory_search` (chunks) → `memory_expand` (section) → origin transcript              |
 | Stable snapshot  | `before_agent_start` hook          | Recent memory appended to the system prompt, byte-identical between checkpoints       |
-| Diagnostics      | `memory_status` tool               | Backend, version, scope, collection, index health, chunk count in one call            |
+| Diagnostics      | `memory_status` tool               | One-call health report — see [Tools](#tools)                                          |
 
 ### Memory store
 
@@ -149,4 +149,4 @@ No build step: pi loads `extensions/*.ts` through jiti, so the package ships Typ
 
 Before a release: `mise run check`, `mise run test`, `mise run test:integration` (it drives capture → index → search → expand and the lock-contention retry against real memsearch), then `pi install` the package and confirm a live session captures and recalls. Raising the memsearch version ceiling in `src/contract.ts` or the pi peer range in `package.json` is a deliberate act: bump it, then re-run the integration suite on that line.
 
-Evidence base for the design decisions: `docs/research/`. Vocabulary: `CONTEXT.md`. Mesh-parity decision: `docs/adr/0001-mesh-parity.md`.
+Evidence base for the design decisions: [`docs/research/`](docs/research/). Vocabulary: [`CONTEXT.md`](CONTEXT.md). Mesh-parity decision: [`docs/adr/0001-mesh-parity.md`](docs/adr/0001-mesh-parity.md).
