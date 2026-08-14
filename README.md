@@ -6,7 +6,7 @@
 
 pi ships no built-in memory by design ("primitives, not features"). The existing community option, `pi-memory`, delegates search to [qmd](https://github.com/tobilu/qmd) and keeps its index user-global. Two reasons for a memsearch alternative:
 
-1. **Recall accuracy.** Head-to-head benchmark (2026-08-13, 35 queries over an identical corpus of 223 markdown files, pre-agreed decision rule, blind ground truth): memsearch **32/35** strong hits vs **26/35** for qmd's best mode. They tie on short keyword queries; memsearch wins on paraphrased and natural-question recall — the phrasing you actually use when asking "how did we fix X?" weeks later. Full report: the author's `~/knowledge/inbox/memsearch-vs-pi-memory-benchmark.md`.
+1. **Recall accuracy.** Head-to-head benchmark (2026-08-13, 35 queries over an identical corpus of 223 markdown files): memsearch **32/35** strong hits vs **26/35** for qmd's best mode. They tie on short keyword queries; memsearch wins on paraphrased and natural-question recall — the phrasing you actually use when asking "how did we fix X?" weeks later. Full report: [`docs/research/memsearch-vs-pi-memory-benchmark.md`](docs/research/memsearch-vs-pi-memory-benchmark.md).
 2. **Cross-agent memory.** memsearch already integrates Claude Code, OpenClaw, OpenCode and Codex CLI, all sharing one markdown format and one collection-name derivation. This package joins pi to that mesh: pi recalls what Claude Code learned yesterday in the same repo, and vice versa.
 
 ## Install
