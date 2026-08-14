@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
-import { type Backend, createBackend } from './backend.ts'
+import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
-import { MEMSEARCH_SPEC } from './contract.ts'
+import { MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
 import { type ExecFn, execProcess } from './exec.ts'
 import { appendMemoryEntry, localDateKey } from './memory-file.ts'
 import { deriveCollection, resolveProjectScope } from './scope.ts'
@@ -68,6 +68,34 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
 
     pi.registerTool({
       description:
+        'Search the shared project memory for past decisions, fixes and context. Returns top-k scored chunks; pass a chunk_hash to memory_expand for the full section.',
+      execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
+        const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
+        const collection = deriveCollection(scope.dir)
+        const options = signal ? { signal } : {}
+        try {
+          const hits = await backend.search(
+            params.query,
+            collection,
+            params.top_k === undefined ? options : { ...options, topK: params.top_k },
+          )
+          const text = hits.length === 0 ? `No memories found for "${params.query}".` : formatHits(hits)
+          return { content: [{ text, type: 'text' as const }], details: { hits } }
+        } catch (error) {
+          if (error instanceof BackendUnavailableError) return unavailableResult(error)
+          throw error
+        }
+      },
+      label: 'Memory search',
+      name: 'memory_search',
+      parameters: Type.Object({
+        query: Type.String({ description: 'Semantic search query over the project memory' }),
+        top_k: Type.Optional(Type.Integer({ description: 'Number of chunks to return (default 5)', minimum: 1 })),
+      }),
+    })
+
+    pi.registerTool({
+      description:
         'Diagnose the shared project memory backend: uv/memsearch availability and version, project scope, collection, and indexed chunk count.',
       execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => {
         const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
@@ -123,6 +151,23 @@ function createBackgroundQueue(): (task: () => Promise<void>) => void {
   return (task) => {
     tail = tail.then(task).catch(() => {})
   }
+}
+
+function unavailableResult(error: BackendUnavailableError) {
+  return {
+    content: [{ text: error.availability.instructions, type: 'text' as const }],
+    details: { unavailable: error.availability.reason },
+  }
+}
+
+function formatHits(hits: SearchHit[]): string {
+  const blocks = hits.map(
+    (hit, index) =>
+      `${index + 1}. score ${
+        hit.score.toFixed(3)
+      } | chunk ${hit.chunk_hash} | ${hit.source}:${hit.start_line}-${hit.end_line}\n${hit.content}`,
+  )
+  return [`${hits.length} memory chunk(s), best first:`, ...blocks].join('\n\n')
 }
 
 async function describeChunkCount(

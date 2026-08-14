@@ -1,8 +1,18 @@
-import { isLockContention, isMissingCollection, MEMSEARCH_SPEC, parseChunkCount, parseVersion } from './contract.ts'
+import {
+  isLockContention,
+  isMissingCollection,
+  MEMSEARCH_SPEC,
+  parseChunkCount,
+  parseSearchHits,
+  parseVersion,
+  type SearchHit,
+} from './contract.ts'
 import type { ExecFn, ExecResult } from './exec.ts'
 
 const VERSION_TIMEOUT_MS = 60_000
 const STATS_TIMEOUT_MS = 10_000
+const DEFAULT_SEARCH_TIMEOUT_MS = 30_000
+const DEFAULT_TOP_K = 5
 const NEGATIVE_PROBE_TTL_MS = 30_000
 const BACKOFF_DELAYS_MS = [200, 500, 1000, 2000]
 
@@ -37,6 +47,7 @@ export interface CommandOptions {
 
 export interface Backend {
   probe(options?: CommandOptions): Promise<Availability>
+  search(query: string, collection: string, options?: CommandOptions & { topK?: number }): Promise<SearchHit[]>
   stats(collection: string, options?: CommandOptions): Promise<number | 'missing'>
 }
 
@@ -48,6 +59,7 @@ export interface BackendDeps {
 }
 
 export function createBackend(deps: BackendDeps): Backend {
+  const searchTimeoutMs = resolveSearchTimeoutMs(deps.env)
   let tail: Promise<unknown> = Promise.resolve()
   let probeCache: { expiresAtMs?: number; result: Promise<Availability> } | undefined
 
@@ -129,6 +141,19 @@ export function createBackend(deps: BackendDeps): Backend {
     if (!availability.available) throw new BackendUnavailableError(availability)
   }
 
+  async function search(
+    query: string,
+    collection: string,
+    options: CommandOptions & { topK?: number } = {},
+  ): Promise<SearchHit[]> {
+    await ensureAvailable(options)
+    const topK = options.topK ?? DEFAULT_TOP_K
+    const args = ['search', query, '-j', '-k', String(topK), '-c', collection]
+    const result = await invoke(args, searchTimeoutMs, options)
+    if (result.exitCode !== 0) throw commandError('search', result, searchTimeoutMs)
+    return parseSearchHits(result.stdout)
+  }
+
   async function stats(collection: string, options: CommandOptions = {}): Promise<number | 'missing'> {
     await ensureAvailable(options)
     const result = await invoke(['stats', '-c', collection], STATS_TIMEOUT_MS, options)
@@ -139,7 +164,16 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseChunkCount(result.stdout)
   }
 
-  return { probe, stats }
+  return { probe, search, stats }
+}
+
+function resolveSearchTimeoutMs(env: NodeJS.ProcessEnv): number {
+  const raw = env['PI_MEMSEARCH_SEARCH_TIMEOUT_MS']
+  if (raw === undefined || raw === '') return DEFAULT_SEARCH_TIMEOUT_MS
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value <= 0)
+    throw new Error(`PI_MEMSEARCH_SEARCH_TIMEOUT_MS must be a positive integer of milliseconds, got "${raw}"`)
+  return value
 }
 
 function commandError(name: string, result: ExecResult, timeoutMs: number): Error {

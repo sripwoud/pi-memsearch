@@ -24,3 +24,70 @@ export function parseChunkCount(stdout: string): number {
     throw new Error(`memsearch stats output drifted: expected "Total indexed chunks: N", got "${stdout.trim()}"`)
   return Number(count)
 }
+
+export interface SearchHit {
+  chunk_hash: string
+  content: string
+  end_line: number
+  heading: string
+  heading_level: number
+  score: number
+  source: string
+  start_line: number
+}
+
+export function parseSearchHits(stdout: string): SearchHit[] {
+  const data = parseJson(stdout, 'search')
+  if (!Array.isArray(data)) throw driftError('search', `expected an array, got ${typeof data}`)
+  return data.map((item, index) => {
+    const record = asRecord(item, 'search', `result ${index}`)
+    const at = `result ${index}`
+    return {
+      chunk_hash: requireString(record, 'chunk_hash', 'search', at),
+      content: requireString(record, 'content', 'search', at),
+      end_line: requireNumber(record, 'end_line', 'search', at),
+      heading: requireString(record, 'heading', 'search', at),
+      heading_level: requireNumber(record, 'heading_level', 'search', at),
+      score: requireNumber(record, 'score', 'search', at),
+      source: requireString(record, 'source', 'search', at),
+      start_line: requireNumber(record, 'start_line', 'search', at),
+    }
+  })
+}
+
+function parseJson(stdout: string, command: string): unknown {
+  try {
+    return JSON.parse(stdout)
+  } catch {
+    throw driftError(command, `not valid JSON: "${truncate(stdout)}"`)
+  }
+}
+
+function driftError(command: string, detail: string): Error {
+  return new Error(`memsearch ${command} JSON output drifted: ${detail}`)
+}
+
+function asRecord(value: unknown, command: string, context: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw driftError(command, `${context} is not an object`)
+  return value as Record<string, unknown>
+}
+
+function requireString(record: Record<string, unknown>, key: string, command: string, context: string): string {
+  const value = record[key]
+  if (typeof value !== 'string')
+    throw driftError(command, `${context} field "${key}" expected a string, got ${typeof value}`)
+  return value
+}
+
+function requireNumber(record: Record<string, unknown>, key: string, command: string, context: string): number {
+  const value = record[key]
+  if (typeof value !== 'number')
+    throw driftError(command, `${context} field "${key}" expected a number, got ${typeof value}`)
+  return value
+}
+
+function truncate(text: string): string {
+  const trimmed = text.trim()
+  return trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed
+}
