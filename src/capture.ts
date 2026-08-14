@@ -37,6 +37,7 @@ export interface CaptureDeps {
   distillationTimeoutMs: number
   env: NodeJS.ProcessEnv
   now(): Date
+  onWrite(cwd: string): void
   schedule(task: () => Promise<void>): void
 }
 
@@ -63,6 +64,7 @@ export function registerCapture(pi: ExtensionAPI, deps: CaptureDeps): void {
     const transcript = serializeExchange(exchange.messages)
     const complete = deps.complete ?? defaultComplete(ctx)
 
+    const cwd = ctx.cwd
     deps.schedule(async () => {
       try {
         const model = resolveDistillationModel({
@@ -75,6 +77,7 @@ export function registerCapture(pi: ExtensionAPI, deps: CaptureDeps): void {
       } catch (error) {
         appendMemoryEntry(memoryDir, { ...anchor, content: diagnosticMarker(error) })
       }
+      deps.onWrite(cwd)
     })
   })
 }

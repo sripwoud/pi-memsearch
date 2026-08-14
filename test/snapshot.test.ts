@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createMemsearchExtension } from '../src/extension.ts'
-import { createFakeContext, createFakePi, type FakePi, type FakeSession } from './harness.ts'
+import { createFakeContext, createFakeExec, createFakePi, type FakePi, type FakeSession } from './harness.ts'
 
 const BASE_PROMPT = 'You are pi.'
 
@@ -23,7 +23,12 @@ function setup(options: { clock?: () => Date; env?: NodeJS.ProcessEnv } = {}) {
 
   const { fire, pi, tools } = createFakePi()
   const clock = options.clock ?? (() => new Date(2026, 7, 14, 10, 0))
-  createMemsearchExtension({ env: options.env ?? {}, now: clock })(pi)
+  createMemsearchExtension({
+    env: options.env ?? {},
+    exec: createFakeExec([]).exec,
+    now: clock,
+    sleep: async () => {},
+  })(pi)
 
   const ctx = createFakeContext({ cwd: root, session: SESSION })
   return { ctx, fire, memoryDir, tools }

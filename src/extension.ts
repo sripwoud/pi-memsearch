@@ -5,6 +5,7 @@ import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from 
 import { type ExpandedSection, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
 import { type ExecFn, execProcess } from './exec.ts'
 import { type IndexState, readIndexState } from './index-state.ts'
+import { createIndexTriggers, SHUTDOWN_CAP_MS } from './indexer.ts'
 import { appendMemoryEntry, localDateKey } from './memory-file.ts'
 import { deriveCollection, type ProjectScope, resolveProjectScope } from './scope.ts'
 import { buildSnapshot } from './snapshot.ts'
@@ -22,19 +23,34 @@ export interface MemsearchDeps {
 export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi: ExtensionAPI) => void {
   const env = deps.env ?? process.env
   const now = deps.now ?? (() => new Date())
-  const schedule = deps.schedule ?? createBackgroundQueue()
+  const queue = createBackgroundQueue()
+  const schedule = deps.schedule ?? queue.schedule
   const exec = deps.exec ?? execProcess
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
 
   return (pi) => {
+    const backend = createBackend({ env, exec, now, sleep })
+    const indexer = createIndexTriggers({ backend, env, sleep })
     registerCapture(pi, {
       complete: deps.complete,
       distillationTimeoutMs: deps.distillationTimeoutMs ?? DEFAULT_DISTILLATION_TIMEOUT_MS,
       env,
       now,
+      onWrite: (cwd) => indexer.noteWrite(cwd),
       schedule,
     })
-    const backend = createBackend({ env, exec, now, sleep })
+
+    pi.on('session_start', (_event, ctx) => {
+      indexer.catchUp(ctx.cwd)
+    })
+    pi.on('session_shutdown', async () => {
+      indexer.beginShutdown()
+      const flushed = (async () => {
+        await queue.flush()
+        await indexer.settle()
+      })()
+      await Promise.race([flushed, sleep(SHUTDOWN_CAP_MS).then(() => indexer.abortInFlight())])
+    })
 
     pi.registerTool({
       description:
@@ -56,6 +72,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           timestamp: now(),
           transcriptPath,
         })
+        indexer.noteWrite(ctx.cwd)
         return { content: [{ text: `Memory saved to ${file}`, type: 'text' as const }], details: { file } }
       },
       label: 'Memory write',
@@ -158,10 +175,18 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
   }
 }
 
-function createBackgroundQueue(): (task: () => Promise<void>) => void {
+interface BackgroundQueue {
+  flush(): Promise<void>
+  schedule(task: () => Promise<void>): void
+}
+
+function createBackgroundQueue(): BackgroundQueue {
   let tail: Promise<void> = Promise.resolve()
-  return (task) => {
-    tail = tail.then(task).catch(() => {})
+  return {
+    flush: () => tail,
+    schedule(task) {
+      tail = tail.then(task).catch(() => {})
+    },
   }
 }
 
