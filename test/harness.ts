@@ -1,6 +1,7 @@
 import type { Api, AssistantMessage, Model, StopReason, UserMessage } from '@earendil-works/pi-ai'
 import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import type { ModelCatalog } from '../src/distillation-model.ts'
+import type { ExecFn, ExecOptions, ExecResult } from '../src/exec.ts'
 
 export interface FakeSession {
   sessionId: string
@@ -71,6 +72,29 @@ export function assistantEntry(id: string, text: string | undefined, stopReason:
     stopReason,
   } as AssistantMessage
   return { id, message, parentId: null, timestamp: '2026-08-13T22:40:30.000Z', type: 'message' }
+}
+
+export interface RecordedCall {
+  args: string[]
+  command: string
+  options: ExecOptions
+}
+
+export type FakeExecStep = ExecResult | Error | ((call: RecordedCall) => Promise<ExecResult>)
+
+export function createFakeExec(steps: FakeExecStep[]): { calls: RecordedCall[]; exec: ExecFn } {
+  const calls: RecordedCall[] = []
+  const remaining = [...steps]
+  const exec: ExecFn = async (command, args, options) => {
+    const call = { args, command, options }
+    calls.push(call)
+    const step = remaining.shift()
+    if (!step) throw new Error(`unexpected exec call: ${command} ${args.join(' ')}`)
+    if (step instanceof Error) throw step
+    if (typeof step === 'function') return step(call)
+    return step
+  }
+  return { calls, exec }
 }
 
 export function createFakeContext(options: {

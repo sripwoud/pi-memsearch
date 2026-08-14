@@ -1,22 +1,29 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
+import { type Backend, createBackend } from './backend.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
+import { MEMSEARCH_SPEC } from './contract.ts'
+import { type ExecFn, execProcess } from './exec.ts'
 import { appendMemoryEntry, localDateKey } from './memory-file.ts'
-import { resolveProjectScope } from './scope.ts'
+import { deriveCollection, resolveProjectScope } from './scope.ts'
 import { buildSnapshot } from './snapshot.ts'
 
 export interface MemsearchDeps {
   complete: Complete
   distillationTimeoutMs: number
   env: NodeJS.ProcessEnv
+  exec: ExecFn
   now(): Date
   schedule(task: () => Promise<void>): void
+  sleep(ms: number): Promise<void>
 }
 
 export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi: ExtensionAPI) => void {
   const env = deps.env ?? process.env
   const now = deps.now ?? (() => new Date())
   const schedule = deps.schedule ?? createBackgroundQueue()
+  const exec = deps.exec ?? execProcess
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
 
   return (pi) => {
     registerCapture(pi, {
@@ -26,6 +33,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       now,
       schedule,
     })
+    const backend = createBackend({ env, exec, now, sleep })
+
     pi.registerTool({
       description:
         'Persist a memory to the shared project memory store, immediately. Use when the user asks to remember something, or when a decision, fix, or fact should survive this session.',
@@ -55,6 +64,32 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           description: 'Memory entry: third-person markdown bullets, in the primary language of the conversation',
         }),
       }),
+    })
+
+    pi.registerTool({
+      description:
+        'Diagnose the shared project memory backend: uv/memsearch availability and version, project scope, collection, and indexed chunk count.',
+      execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => {
+        const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
+        const collection = deriveCollection(scope.dir)
+        const options = signal ? { signal } : {}
+        const availability = await backend.probe(options)
+
+        const lines: string[] = []
+        if (availability.available)
+          lines.push('backend: available', `memsearch: ${availability.version} (pinned ${MEMSEARCH_SPEC})`)
+        else
+          lines.push(`backend: unavailable (${availability.reason})`, availability.instructions)
+        lines.push(`scope: ${scope.dir}`, `collection: ${collection}`)
+        if (availability.available)
+          lines.push(await describeChunkCount(backend, collection, options))
+
+        const text = lines.join('\n')
+        return { content: [{ text, type: 'text' as const }], details: { availability, collection, scope: scope.dir } }
+      },
+      label: 'Memory status',
+      name: 'memory_status',
+      parameters: Type.Object({}),
     })
 
     if (env['PI_MEMSEARCH_SNAPSHOT'] === 'off') return
@@ -87,5 +122,18 @@ function createBackgroundQueue(): (task: () => Promise<void>) => void {
   let tail: Promise<void> = Promise.resolve()
   return (task) => {
     tail = tail.then(task).catch(() => {})
+  }
+}
+
+async function describeChunkCount(
+  backend: Backend,
+  collection: string,
+  options: { signal?: AbortSignal },
+): Promise<string> {
+  try {
+    const chunks = await backend.stats(collection, options)
+    return chunks === 'missing' ? 'indexed chunks: 0 (collection not created yet)' : `indexed chunks: ${chunks}`
+  } catch (error) {
+    return `indexed chunks: unavailable (${error instanceof Error ? error.message : String(error)})`
   }
 }
