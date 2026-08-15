@@ -95,7 +95,7 @@ When the conversation happened in _another_ repo, cross-repo recall widens the s
 
 ### Memory compaction
 
-`memory_compact` runs memsearch's `compact` — an LLM condenses the whole memory store and appends the summary to today's daily memory file, which memsearch immediately re-indexes. Not to be confused with pi's context compaction: the live conversation is untouched. It requires `llm.provider` (and its API key) in memsearch's config and spends that provider's budget, so the model calls it only on explicit request; the tool result is the full markdown summary, or a plain "nothing to compact" when the collection has no chunks. Like a mid-session `memory_write`, it does not refresh the stable snapshot. Known limit: the summary lands as memsearch's own `## Memory Compact` block, outside pi's entry shape, so `memory_forget` cannot address it ([#41](https://github.com/sripwoud/pi-memsearch/issues/41)).
+`memory_compact` runs memsearch's `compact` — an LLM condenses the whole memory store and appends the summary to today's daily memory file, which memsearch immediately re-indexes. Not to be confused with pi's context compaction: the live conversation is untouched. It requires `llm.provider` (and its API key) in memsearch's config and spends that provider's budget, so the model calls it only on explicit request; the tool result is the full markdown summary, or a plain "nothing to compact" when the collection has no chunks. Like a mid-session `memory_write`, it does not refresh the stable snapshot. The summary lands as memsearch's own `## Memory Compact` block, outside pi's entry shape; `memory_forget` with a chunk_hash from inside the block redacts the whole block, and a later `memory_compact` regenerates a fresh summary ([#41](https://github.com/sripwoud/pi-memsearch/issues/41)).
 
 ### Stable snapshot
 
@@ -116,7 +116,7 @@ Milvus Lite allows a single client at a time, so every memsearch invocation goes
 | `memory_write`   | —     | Persist a memory now: timestamped, anchored, appended to today's file                                                   |
 | `memory_search`  | L1    | Top-k scored chunks for a query; `scope: "all"` widens to cross-repo recall                                             |
 | `memory_expand`  | L2    | Full section for a chunk hash, with its session anchor; `project` routes to a cross-repo hit's origin                   |
-| `memory_forget`  | —     | Redact one entry from store and collection; the tool result is the only record                                          |
+| `memory_forget`  | —     | Redact one entry or compact block from store and collection; the tool result is the only record                         |
 | `memory_compact` | —     | Memory compaction on explicit request; returns memsearch's markdown summary                                             |
 | `memory_status`  | —     | Doctor: uv/memsearch presence and version, scope, collection, index state, chunk count, auto-context state and counters |
 

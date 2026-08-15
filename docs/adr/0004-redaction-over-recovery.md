@@ -4,7 +4,7 @@
 
 Concretely:
 
-- **Forget removes exactly one whole memory entry** (timestamp heading, session anchor, bullets), addressed exactly — by `chunk_hash` or by `(date, time)`. No substring matching: pi-memory's fuzzy match is why it needed recovery records; exact addressing removes the over-match risk instead of insuring against it.
+- **Forget removes exactly one whole memory entry** (timestamp heading, session anchor, bullets) **or one whole `## Memory Compact` block**, addressed exactly — by `chunk_hash`, or by `(date, time)` for entries. No substring matching: pi-memory's fuzzy match is why it needed recovery records; exact addressing removes the over-match risk instead of insuring against it. Whole-block granularity for compact output is safe because the block is derived, not primary: `memory_compact` regenerates a fresh summary from the surviving store.
 - **The tool result echoes the removed entry** — the in-session record. Salvageable facts re-enter via `memory_write`.
 - **Forget triggers a reindex and a snapshot refresh**, so redacted content leaves both the collection and the injected context, not just the file.
 - **Undo is not pi-memsearch's job.** Git history covers it when the store is committed; a gitignored store has no undo — the deal the user opted into by keeping memory personal.
