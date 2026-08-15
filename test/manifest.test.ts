@@ -1,5 +1,5 @@
 import { deepEqual, match, ok } from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
@@ -24,6 +24,11 @@ test('pi manifest declares the recall surface directories', () => {
 
 test('internal modules ship with the package', () => {
   ok(pkg.files.includes('src'))
+})
+
+test('the sidecar script ships at the path the extension spawns', () => {
+  ok(pkg.files.includes('src'))
+  ok(existsSync(new URL('../src/sidecar.py', import.meta.url)))
 })
 
 test('pi peer dependencies declare the tested floor', () => {
