@@ -75,12 +75,22 @@ export function listCompactBlocks(content: string): CompactBlock[] {
   return blocks
 }
 
-// Chunks inside a compact block carry the summary's nearest heading, which may be a sub-heading
-// rather than "Memory Compact"; blocks are therefore matched by line-range overlap, not heading.
+/**
+ * Chunks inside a compact block carry the summary's nearest heading, which may be a sub-heading
+ * rather than "Memory Compact", so blocks are matched by line-range overlap — but the stamped
+ * heading must appear as a heading line inside the block, so a stale window from an entry chunk
+ * can never fall through to deleting a block it merely overlaps.
+ */
 export function compactBlocksForSection(content: string, section: SectionAddress): CompactBlock[] {
   return listCompactBlocks(content).filter(
-    (block) => section.start_line <= block.end && block.start <= section.end_line,
+    (block) =>
+      section.start_line <= block.end && block.start <= section.end_line
+      && blockHasHeading(block, section.heading),
   )
+}
+
+function blockHasHeading(block: CompactBlock, heading: string): boolean {
+  return block.text.split('\n').some((line) => /^#{2,}\s+(.*?)\s*$/.exec(line)?.[1] === heading)
 }
 
 export function removeCompactBlock(content: string, block: CompactBlock): string {

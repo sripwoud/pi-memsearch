@@ -206,6 +206,14 @@ test('a window over plain entries resolves to no block', () => {
   deepEqual(compactBlocksForSection(COMPACT_DAY_FILE, { end_line: 6, heading: '22:41', start_line: 2 }), [])
 })
 
+test('a stale entry window overlapping a block never resolves to it', () => {
+  deepEqual(compactBlocksForSection(COMPACT_DAY_FILE, { end_line: 12, heading: '22:41', start_line: 6 }), [])
+})
+
+test('a block lacking the stamped heading is not matched even when the window overlaps it', () => {
+  deepEqual(compactBlocksForSection(COMPACT_DAY_FILE, { end_line: 20, heading: 'Fixes', start_line: 18 }), [])
+})
+
 test('removeCompactBlock removes exactly the addressed block and keeps the rest', () => {
   const blocks = listCompactBlocks(COMPACT_DAY_FILE)
   const first = blocks[0]

@@ -428,6 +428,28 @@ test('only the enclosing compact block is removed when several accumulate', asyn
   ok(!remaining.includes('- second pass: dropped duplicate notes'))
 })
 
+test('a stale entry chunk overlapping a compact block is rejected without mutating', async () => {
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: lineOf(COMPACT_DAY_FILE, '- redis owns the hot cache'),
+            heading: '22:55',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: lineOf(COMPACT_DAY_FILE, '- decided to use redis for the hot cache'),
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', COMPACT_DAY_FILE)
+
+  await rejects(() => forget(tool, ctx, { chunk_hash: 'feedface00000000' }), /does not resolve/)
+
+  equal(readFileSync(file, 'utf8'), COMPACT_DAY_FILE)
+})
+
 test('a window spanning two compact blocks is rejected as ambiguous', async () => {
   const { ctx, memoryDir, tool } = setup([
     okResult(VERSION_STDOUT),
