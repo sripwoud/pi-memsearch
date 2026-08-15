@@ -1,6 +1,6 @@
 import { equal, match, ok } from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { describe, test } from 'node:test'
 import { MEMSEARCH_SPEC } from '../../src/contract.ts'
 import { readIndexState } from '../../src/index-state.ts'
@@ -88,5 +88,45 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
     ok(text.includes(`collection: ${live.collection}`))
     match(text, /index: ok/)
     match(text, /indexed chunks: [1-9]\d*/)
+  })
+
+  test('memory_forget by chunk hash redacts the entry and search stops returning it', async () => {
+    await live.toolText('memory_write', { content: '- the agent tuned the warp drive injectors to seven hertz' })
+    await live.fire('session_shutdown')
+
+    // A write reindexes the day file and re-chunks it, so hashes from before the write are stale;
+    // forget must act on a hash from the current index state.
+    const found = await live.toolText('memory_search', {
+      query: 'which vector database did we settle on for the flux-capacitor cache?',
+    })
+    ok(found.includes('flux-capacitor'), `search lost the flux-capacitor entry:\n${found}`)
+    const freshHash = /\| chunk (\S+) \|/.exec(found)?.[1]
+    ok(freshHash, 'search rendered a chunk hash to forget')
+
+    const text = await live.toolText('memory_forget', { chunk_hash: freshHash })
+
+    ok(text.includes(BULLETS), `forget did not echo the removed entry:\n${text}`)
+    ok(dailyFile && readFileSync(dailyFile, 'utf8').includes('warp drive'), 'the other entry survived in the day file')
+    await live.fire('session_shutdown')
+
+    const search = await live.toolText('memory_search', {
+      query: 'which vector database did we settle on for the flux-capacitor cache?',
+    })
+    ok(!search.includes('flux-capacitor'), `the redacted entry still surfaces in search:\n${search}`)
+  })
+
+  test('memory_forget by date and time deletes an emptied daily file and drains the collection', async () => {
+    ok(dailyFile, 'capture produced a daily file')
+    const time = /### (\d{2}:\d{2})/.exec(readFileSync(dailyFile, 'utf8'))?.[1]
+    ok(time, 'the remaining entry has a timestamp heading')
+
+    const text = await live.toolText('memory_forget', { date: basename(dailyFile, '.md'), time })
+
+    ok(text.includes('warp drive'), `forget did not echo the removed entry:\n${text}`)
+    ok(!existsSync(dailyFile), 'the emptied day file was deleted')
+    await live.fire('session_shutdown')
+
+    const search = await live.toolText('memory_search', { query: 'warp drive injector tuning' })
+    match(search, /No memories found/)
   })
 })
