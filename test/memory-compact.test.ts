@@ -7,6 +7,7 @@ import type { ExecResult } from '../src/exec.ts'
 import { createMemsearchExtension } from '../src/extension.ts'
 import { deriveCollection } from '../src/scope.ts'
 import {
+  COMPACT_NOOP_STDOUT,
   COMPACT_STDOUT,
   COMPACT_SUMMARY,
   CONFIG_ERROR_STDERR,
@@ -35,23 +36,32 @@ async function compact(tool: ToolDefinition, ctx: ExtensionContext): Promise<str
   return first.text
 }
 
-test('takes no parameters and runs compact against the project memory store', async () => {
+test('takes no parameters and runs memory compaction over the whole project collection', async () => {
   const { calls, ctx, root, tool } = setup([okResult(VERSION_STDOUT), okResult(COMPACT_STDOUT)])
 
-  const text = await compact(tool, ctx)
+  const result = await tool.execute('call-1', {}, undefined, undefined, ctx)
 
   deepEqual(calls[1]?.args, [
     ...UVX_PREFIX,
     'compact',
-    '-s',
-    join(root, '.memsearch', 'memory'),
     '-o',
     join(root, '.memsearch'),
     '-c',
     deriveCollection(root),
   ])
   equal(calls[1]?.options.timeoutMs, 300_000)
-  equal(text, COMPACT_SUMMARY)
+  const first = result.content[0]
+  ok(first?.type === 'text')
+  equal(first.text, COMPACT_SUMMARY)
+  deepEqual(result.details, { collection: deriveCollection(root) })
+})
+
+test('an empty collection reports nothing to compact instead of failing', async () => {
+  const { ctx, tool } = setup([okResult(VERSION_STDOUT), okResult(COMPACT_NOOP_STDOUT)])
+
+  const text = await compact(tool, ctx)
+
+  match(text, /Nothing to compact/)
 })
 
 test('the parameter schema is empty', () => {
@@ -77,7 +87,7 @@ test('missing uv returns install instructions instead of an error', async () => 
   match(text, /astral\.sh\/uv\/install\.sh/)
 })
 
-test('a failed compact surfaces the stderr detail', async () => {
+test('a failed memory compaction surfaces the stderr detail', async () => {
   const { ctx, tool } = setup([okResult(VERSION_STDOUT), errResult(1, CONFIG_ERROR_STDERR)])
 
   await rejects(
@@ -106,7 +116,13 @@ test('output drift fails loudly', async () => {
   await rejects(() => compact(tool, ctx), /memsearch compact output drifted/)
 })
 
-test('PI_MEMSEARCH_COMPACT_TIMEOUT_MS overrides the compact timeout', async () => {
+test('a whitespace-only summary fails loudly instead of returning empty text', async () => {
+  const { ctx, tool } = setup([okResult(VERSION_STDOUT), okResult('Compact complete. Summary:\n\n   \n')])
+
+  await rejects(() => compact(tool, ctx), /memsearch compact output drifted/)
+})
+
+test('PI_MEMSEARCH_COMPACT_TIMEOUT_MS overrides the memory compaction timeout', async () => {
   const { calls, ctx, tool } = setup([okResult(VERSION_STDOUT), okResult(COMPACT_STDOUT)], {
     env: { PI_MEMSEARCH_COMPACT_TIMEOUT_MS: '600000' },
   })
@@ -134,7 +150,7 @@ test('the abort signal is passed through to the backend process', async () => {
   equal(calls[1]?.options.signal, controller.signal)
 })
 
-test('compact runs through the same serialized queue as search', async () => {
+test('memory compaction runs through the same serialized queue as search', async () => {
   let inFlight = 0
   let maxInFlight = 0
   const respond = async (call: RecordedCall): Promise<ExecResult> => {
@@ -157,7 +173,7 @@ test('compact runs through the same serialized queue as search', async () => {
   equal(maxInFlight, 1)
 })
 
-test('a mid-session compact does not refresh the stable snapshot', async () => {
+test('a mid-session memory compaction does not refresh the stable snapshot', async () => {
   const { ctx, fire, root, tool } = setup([
     okResult(VERSION_STDOUT),
     okResult(INDEXED_STDOUT),

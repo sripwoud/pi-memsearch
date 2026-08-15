@@ -61,7 +61,7 @@ export interface CommandOptions {
 }
 
 export interface Backend {
-  compact(source: string, outputDir: string, collection: string, options?: CommandOptions): Promise<string>
+  compact(outputDir: string, collection: string, options?: CommandOptions): Promise<string | undefined>
   configGet(key: string, options?: CommandOptions): Promise<string>
   configSet(key: string, value: string, options?: CommandOptions): Promise<void>
   expand(chunkHash: string, collection: string, options?: CommandOptions): Promise<ExpandedSection>
@@ -211,12 +211,11 @@ export function createBackend(deps: BackendDeps): Backend {
   }
 
   async function compact(
-    source: string,
     outputDir: string,
     collection: string,
     options: CommandOptions = {},
-  ): Promise<string> {
-    const args = ['compact', '-s', source, '-o', outputDir, '-c', collection]
+  ): Promise<string | undefined> {
+    const args = ['compact', '-o', outputDir, '-c', collection]
     const result = await runCommand('compact', args, compactTimeoutMs, options)
     return parseCompactSummary(result.stdout)
   }

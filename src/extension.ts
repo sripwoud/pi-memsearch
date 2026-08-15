@@ -284,8 +284,9 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         const { collection, options, scope } = resolveTarget(ctx, env, signal)
         return orInstallInstructions(async () => {
           await bootstrap.ensure(scope.dir)
-          const summary = await backend.compact(scope.memoryDir, dirname(scope.memoryDir), collection, options)
-          return { content: [{ text: summary, type: 'text' as const }], details: { collection, summary } }
+          const summary = await backend.compact(dirname(scope.memoryDir), collection, options)
+          const text = summary ?? 'Nothing to compact: the collection has no indexed chunks.'
+          return { content: [{ text, type: 'text' as const }], details: { collection } }
         })
       },
       label: 'Memory compact',
