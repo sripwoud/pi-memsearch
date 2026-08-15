@@ -57,10 +57,13 @@ _Avoid_: compaction (unqualified), compact
 
 **Stable snapshot**:
 The byte-stable block of instructions plus recent memory injected into the model's context, refreshed only at checkpoints so prefix caches survive across turns.
-_Avoid_: auto-context (that is the deferred per-turn feature, not this)
+_Avoid_: auto-context (that is the per-prompt feature, not this)
 
 **Auto-context**:
-Per-turn semantic injection of search results into the model's context. Deferred beyond v1; not part of the stable snapshot.
+Opt-in per-prompt semantic injection of search results into the model's context, served by a per-session warm sidecar within a hard latency budget. Complements the recall tools and the stable snapshot; never part of either.
+
+**Sidecar**:
+The per-session child process that holds the embedding model warm and serves auto-context searches over stdio, borrowing the Milvus lock per prompt instead of holding it.
 
 **Cross-repo recall**:
 Opt-in recall escalation that searches other projects' collections when project-scoped recall misses, labeling hits by origin project. Read-side only — never a second store.
