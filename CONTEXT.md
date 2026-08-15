@@ -49,3 +49,7 @@ _Avoid_: auto-context (that is the deferred per-turn feature, not this)
 
 **Auto-context**:
 Per-turn semantic injection of search results into the model's context. Deferred beyond v1; not part of the stable snapshot.
+
+**Cross-repo recall**:
+Opt-in recall escalation that searches other projects' collections when project-scoped recall misses, labeling hits by origin project. Read-side only — never a second store.
+_Avoid_: global memory, global search
