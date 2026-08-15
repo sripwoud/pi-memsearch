@@ -1,7 +1,13 @@
 import { deepEqual, equal, ok } from 'node:assert/strict'
 import { test } from 'node:test'
-import { listEntries, removeEntry } from '../src/redaction.ts'
-import { DAY_FILE } from './fixtures.ts'
+import {
+  compactBlocksForSection,
+  listCompactBlocks,
+  listEntries,
+  removeCompactBlock,
+  removeEntry,
+} from '../src/redaction.ts'
+import { COMPACT_DAY_FILE, COMPACT_ONLY_FILE, DAY_FILE } from './fixtures.ts'
 
 test('listEntries finds every timestamp entry with its line range', () => {
   const entries = listEntries(DAY_FILE)
@@ -124,4 +130,115 @@ test('a session heading with freeform content under it is kept', () => {
   const remaining = removeEntry(content, target)
 
   equal(remaining, '\n## Session 09:00\n\n- handwritten note\n')
+})
+
+test('listCompactBlocks finds every compact block with its line range', () => {
+  const blocks = listCompactBlocks(COMPACT_DAY_FILE)
+
+  deepEqual(blocks.map((block) => block.start), [9, 18])
+  deepEqual(blocks.map((block) => block.end), [17, 21])
+})
+
+test('a compact block spans its heading through summary sub-headings, without trailing blanks', () => {
+  const blocks = listCompactBlocks(COMPACT_DAY_FILE)
+
+  equal(
+    blocks[0]?.text,
+    '## Memory Compact\n\n### Decisions\n- redis owns the hot cache\n\n### Fixes\n- login redirect resolved',
+  )
+  equal(blocks[1]?.text, '## Memory Compact\n\n- second pass: dropped duplicate notes')
+})
+
+test('a file without compact blocks has none', () => {
+  deepEqual(listCompactBlocks(DAY_FILE), [])
+})
+
+test('a compact block ends at the next session heading', () => {
+  const content = '\n## Memory Compact\n\n- condensed\n\n## Session 09:00\n\n### 09:00\n- entry\n'
+
+  const blocks = listCompactBlocks(content)
+
+  deepEqual(blocks.map((block) => [block.start, block.end]), [[2, 5]])
+  equal(blocks[0]?.text, '## Memory Compact\n\n- condensed')
+})
+
+test('a section window inside a summary sub-heading resolves to its enclosing block', () => {
+  const blocks = compactBlocksForSection(COMPACT_DAY_FILE, { end_line: 15, heading: 'Fixes', start_line: 14 })
+
+  deepEqual(blocks.map((block) => block.start), [9])
+})
+
+test('a section window covering a whole block resolves to that block alone', () => {
+  const blocks = compactBlocksForSection(COMPACT_DAY_FILE, { end_line: 17, heading: 'Memory Compact', start_line: 9 })
+
+  deepEqual(blocks.map((block) => block.start), [9])
+})
+
+test('a padded window reaching into a neighboring entry still resolves to one block', () => {
+  const blocks = compactBlocksForSection(COMPACT_DAY_FILE, { end_line: 12, heading: 'Memory Compact', start_line: 6 })
+
+  deepEqual(blocks.map((block) => block.start), [9])
+})
+
+test('a window spanning two compact blocks returns both', () => {
+  const blocks = compactBlocksForSection(COMPACT_DAY_FILE, { end_line: 19, heading: 'Memory Compact', start_line: 15 })
+
+  deepEqual(blocks.map((block) => block.start), [9, 18])
+})
+
+test('a window over plain entries resolves to no block', () => {
+  deepEqual(compactBlocksForSection(COMPACT_DAY_FILE, { end_line: 6, heading: '22:41', start_line: 2 }), [])
+})
+
+test('removeCompactBlock removes exactly the addressed block and keeps the rest', () => {
+  const blocks = listCompactBlocks(COMPACT_DAY_FILE)
+  const first = blocks[0]
+  ok(first)
+
+  const remaining = removeCompactBlock(COMPACT_DAY_FILE, first)
+
+  equal(
+    remaining,
+    `
+## Session 22:41
+
+### 22:41
+<!-- session:s1 turn:t1 transcript:/tmp/a.jsonl -->
+- decided to use redis for the hot cache
+
+
+## Memory Compact
+
+- second pass: dropped duplicate notes
+`,
+  )
+})
+
+test('removing the later of two compact blocks keeps the earlier one', () => {
+  const blocks = listCompactBlocks(COMPACT_DAY_FILE)
+  const second = blocks[1]
+  ok(second)
+
+  const remaining = removeCompactBlock(COMPACT_DAY_FILE, second)
+
+  ok(remaining.includes('- redis owns the hot cache'))
+  ok(!remaining.includes('- second pass: dropped duplicate notes'))
+  ok(remaining.includes('- decided to use redis for the hot cache'))
+})
+
+test('removing the only block of a title-only file leaves an empty store', () => {
+  const target = listCompactBlocks(COMPACT_ONLY_FILE)[0]
+  ok(target)
+
+  equal(removeCompactBlock(COMPACT_ONLY_FILE, target), '')
+})
+
+test('removing a block from a file with real entries keeps its date title', () => {
+  const content = '# 2026-08-13\n\n## Session 09:00\n\n### 09:00\n- entry\n\n\n## Memory Compact\n\n- condensed\n'
+  const target = listCompactBlocks(content)[0]
+  ok(target)
+
+  const remaining = removeCompactBlock(content, target)
+
+  equal(remaining, '# 2026-08-13\n\n## Session 09:00\n\n### 09:00\n- entry\n\n')
 })

@@ -2,6 +2,8 @@ const ENTRY_HEADING = /^###\s+(\d{2}:\d{2})\s*$/
 const SECTION_BOUNDARY = /^#{1,3}\s/
 const SESSION_HEADING = /^##\s/
 const SESSION_BOUNDARY = /^#{1,2}\s/
+const COMPACT_HEADING = /^##\s+Memory Compact\s*$/
+const TITLE_HEADING = /^#\s/
 
 export interface EntrySection {
   end: number
@@ -45,6 +47,41 @@ export function entriesForSection(content: string, section: SectionAddress): Ent
   const anchor = section.anchor
   if (!anchor) return inWindow
   return inWindow.filter((entry) => entry.text.includes(`session:${anchor.session} turn:${anchor.turn} `))
+}
+
+export interface CompactBlock {
+  end: number
+  start: number
+  text: string
+}
+
+export function listCompactBlocks(content: string): CompactBlock[] {
+  const lines = content.split('\n')
+  const blocks: CompactBlock[] = []
+  for (let index = 0; index < lines.length; index++) {
+    if (!COMPACT_HEADING.test(lines[index] as string)) continue
+    let end = index + 1
+    while (end < lines.length && !SESSION_BOUNDARY.test(lines[end] as string)) end++
+    const body = lines.slice(index, end)
+    while (body.length > 0 && (body[body.length - 1] as string).trim() === '') body.pop()
+    blocks.push({ end, start: index + 1, text: body.join('\n') })
+  }
+  return blocks
+}
+
+// Chunks inside a compact block carry the summary's nearest heading, which may be a sub-heading
+// rather than "Memory Compact"; blocks are therefore matched by line-range overlap, not heading.
+export function compactBlocksForSection(content: string, section: SectionAddress): CompactBlock[] {
+  return listCompactBlocks(content).filter(
+    (block) => section.start_line <= block.end && block.start <= section.end_line,
+  )
+}
+
+export function removeCompactBlock(content: string, block: CompactBlock): string {
+  const lines = content.split('\n')
+  lines.splice(block.start - 1, block.end - block.start + 1)
+  const meaningful = lines.some((line) => line.trim() !== '' && !TITLE_HEADING.test(line))
+  return meaningful ? lines.join('\n') : ''
 }
 
 export function removeEntry(content: string, entry: EntrySection): string {
