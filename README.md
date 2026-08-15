@@ -93,7 +93,7 @@ When the conversation happened in _another_ repo, cross-repo recall widens the s
 
 ### Memory compaction
 
-`memory_compact` runs memsearch's `compact` — an LLM condenses the whole memory store and appends the summary to today's daily memory file, which memsearch immediately re-indexes. Not to be confused with pi's context compaction: the live conversation is untouched. It requires `llm.provider` (and its API key) in memsearch's config and spends that provider's budget, so the model calls it only on explicit request; the tool result is the full markdown summary. Like a mid-session `memory_write`, it does not refresh the stable snapshot.
+`memory_compact` runs memsearch's `compact` — an LLM condenses the whole memory store and appends the summary to today's daily memory file, which memsearch immediately re-indexes. Not to be confused with pi's context compaction: the live conversation is untouched. It requires `llm.provider` (and its API key) in memsearch's config and spends that provider's budget, so the model calls it only on explicit request; the tool result is the full markdown summary, or a plain "nothing to compact" when the collection has no chunks. Like a mid-session `memory_write`, it does not refresh the stable snapshot. Known limit: the summary lands as memsearch's own `## Memory Compact` block, outside pi's entry shape, so `memory_forget` cannot address it ([#41](https://github.com/sripwoud/pi-memsearch/issues/41)).
 
 ### Stable snapshot
 
