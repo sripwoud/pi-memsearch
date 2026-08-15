@@ -257,6 +257,17 @@ test('removing the only block of a title-only file leaves an empty store', () =>
   equal(removeCompactBlock(COMPACT_ONLY_FILE, target), '')
 })
 
+test('a hand-written level-1 line keeps the file alive when its block is removed', () => {
+  const content = '# 2026-08-13\n\n# TODO migrate store\n\n## Memory Compact\n\n- condensed\n'
+  const target = listCompactBlocks(content)[0]
+  ok(target)
+
+  const remaining = removeCompactBlock(content, target)
+
+  ok(remaining.includes('# TODO migrate store'))
+  ok(remaining.includes('# 2026-08-13'))
+})
+
 test('removing a block from a file with real entries keeps its date title', () => {
   const content = '# 2026-08-13\n\n## Session 09:00\n\n### 09:00\n- entry\n\n\n## Memory Compact\n\n- condensed\n'
   const target = listCompactBlocks(content)[0]

@@ -3,7 +3,7 @@ const SECTION_BOUNDARY = /^#{1,3}\s/
 const SESSION_HEADING = /^##\s/
 const SESSION_BOUNDARY = /^#{1,2}\s/
 const COMPACT_HEADING = /^##\s+Memory Compact\s*$/
-const TITLE_HEADING = /^#\s/
+const DATE_TITLE = /^#\s+\d{4}-\d{2}-\d{2}\s*$/
 
 export interface EntrySection {
   end: number
@@ -96,7 +96,7 @@ function blockHasHeading(block: CompactBlock, heading: string): boolean {
 export function removeCompactBlock(content: string, block: CompactBlock): string {
   const lines = content.split('\n')
   lines.splice(block.start - 1, block.end - block.start + 1)
-  const meaningful = lines.some((line) => line.trim() !== '' && !TITLE_HEADING.test(line))
+  const meaningful = lines.some((line) => line.trim() !== '' && !DATE_TITLE.test(line))
   return meaningful ? lines.join('\n') : ''
 }
 
