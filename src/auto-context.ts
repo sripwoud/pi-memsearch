@@ -11,11 +11,12 @@ export const AUTO_CONTEXT_SCORE_FLOOR = 0.5
 export const AUTO_CONTEXT_CHAR_BUDGET = 2000
 export const AUTO_CONTEXT_QUERY_LIMIT = 500
 export const MAX_SIDECAR_RESPAWNS = 2
-export const TIMEOUTS_PER_CRASH = 3
+export const TIMEOUT_CRASH_THRESHOLD = 3
+export const SHUTDOWN_GRACE_MS = 2000
 
 const SIDECAR_SCRIPT = fileURLToPath(new URL('./sidecar.py', import.meta.url))
 
-const PREAMBLE = 'Project memory (auto-context): chunks semantically relevant to the current prompt, retrieved '
+const PREAMBLE = 'Project memory (auto-context): chunks semantically relevant to the current prompt, recalled '
   + 'from the shared memory store. Background that may be stale — the live conversation wins. '
   + 'Pass a chunk hash to memory_expand for the full section.'
 
@@ -72,9 +73,13 @@ interface Session {
   stopped: boolean
 }
 
+function freshCounters(): AutoContextCounters {
+  return { injected: 0, prompts: 0, skippedBudget: 0, skippedEmpty: 0, skippedError: 0 }
+}
+
 export function createAutoContext(deps: AutoContextDeps): AutoContext {
   const enabled = deps.env[AUTO_CONTEXT_ENV] === 'on'
-  const counters: AutoContextCounters = { injected: 0, prompts: 0, skippedBudget: 0, skippedEmpty: 0, skippedError: 0 }
+  let counters = freshCounters()
   let state: SidecarState = 'warming'
   let scopeDir: string | undefined
   let collection = ''
@@ -182,7 +187,7 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
       current.pending.delete(id)
       counters.skippedBudget++
       consecutiveTimeouts++
-      if (consecutiveTimeouts >= TIMEOUTS_PER_CRASH && session === current && !current.dead) {
+      if (consecutiveTimeouts >= TIMEOUT_CRASH_THRESHOLD && session === current && !current.dead) {
         current.dead = true
         current.pending.clear()
         current.proc.kill()
@@ -213,11 +218,7 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
       if (!enabled) return
       scopeDir = dir
       collection = deriveCollection(dir)
-      counters.injected = 0
-      counters.prompts = 0
-      counters.skippedBudget = 0
-      counters.skippedEmpty = 0
-      counters.skippedError = 0
+      counters = freshCounters()
       respawns = 0
       consecutiveTimeouts = 0
       lastInjectionMs = undefined
@@ -238,9 +239,13 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
       }
     },
     stop() {
-      if (!session || session.dead) return
-      session.stopped = true
-      session.proc.end()
+      const current = session
+      if (!current || current.dead) return
+      current.stopped = true
+      current.proc.end()
+      void deps.sleep(SHUTDOWN_GRACE_MS).then(() => {
+        if (!current.dead) current.proc.kill()
+      })
     },
   }
 }
@@ -252,8 +257,9 @@ function buildContent(hits: SearchHit[], snapshot: string | undefined): string |
   for (const hit of relevant.slice(0, AUTO_CONTEXT_TOP_K)) {
     const block = formatHitBlock(hit, blocks.length)
     if (blocks.length > 0 && total + block.length > AUTO_CONTEXT_CHAR_BUDGET) break
-    blocks.push(block)
-    total += block.length
+    const bounded = block.length > AUTO_CONTEXT_CHAR_BUDGET ? block.slice(0, AUTO_CONTEXT_CHAR_BUDGET) : block
+    blocks.push(bounded)
+    total += bounded.length
   }
   if (blocks.length === 0) return undefined
   return [PREAMBLE, ...blocks].join('\n\n')

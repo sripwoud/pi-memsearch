@@ -134,6 +134,20 @@ export interface FakeSidecar {
 
 export type FakeSidecarPlan = (sidecar: FakeSidecar) => void
 
+export interface InjectedMessage {
+  content: string
+  customType: string
+  display: boolean
+}
+
+export function findInjectedMessage(results: unknown[]): InjectedMessage | undefined {
+  for (const result of results) {
+    const message = (result as { message?: InjectedMessage } | undefined)?.message
+    if (message) return message
+  }
+  return undefined
+}
+
 export function createFakeSidecarSpawner(plans: FakeSidecarPlan[]): {
   sidecars: FakeSidecar[]
   spawnSidecar: SpawnSidecarFn

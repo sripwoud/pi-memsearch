@@ -21,12 +21,15 @@ import sys
 from typing import Any
 
 
+MILVUS_COLLECTION_NOT_FOUND = 100
+
+
 def _emit(payload: dict[str, Any]) -> None:
     print(json.dumps(payload), flush=True)
 
 
 def _is_missing_collection(error: BaseException) -> bool:
-    return getattr(error, "code", None) == 100
+    return getattr(error, "code", None) == MILVUS_COLLECTION_NOT_FOUND
 
 
 def _open_store(config: Any, collection: str) -> Any:
@@ -105,7 +108,7 @@ def _require_params(signature: inspect.Signature, names: set[str], target: str) 
 
 def _probe() -> None:
     from memsearch.config import resolve_config
-    from memsearch.embeddings import get_provider
+    from memsearch.embeddings import EmbeddingProvider, get_provider
     from memsearch.store import MilvusStore
 
     _require_params(
@@ -113,6 +116,10 @@ def _probe() -> None:
         {"name", "model", "batch_size", "base_url", "api_key"},
         "memsearch.embeddings.get_provider",
     )
+    if not inspect.iscoroutinefunction(EmbeddingProvider.embed):
+        raise RuntimeError("memsearch internals drifted: EmbeddingProvider.embed is no longer an async method")
+    if not hasattr(EmbeddingProvider, "model_name"):
+        raise RuntimeError("memsearch internals drifted: EmbeddingProvider lost the model_name property")
     _require_params(
         inspect.signature(MilvusStore.__init__),
         {"uri", "token", "collection", "dimension"},

@@ -5,7 +5,14 @@ import { test } from 'node:test'
 import { MEMSEARCH_SPEC, type SearchHit } from '../src/contract.ts'
 import { deriveCollection } from '../src/scope.ts'
 import { okResult, SEARCH_HITS, STATS_STDOUT, VERSION_STDOUT } from './fixtures.ts'
-import { type FakeExecStep, type FakeSidecarPlan, setupExtension, type SetupOptions } from './harness.ts'
+import {
+  type FakeExecStep,
+  type FakeSidecarPlan,
+  findInjectedMessage,
+  type InjectedMessage,
+  setupExtension,
+  type SetupOptions,
+} from './harness.ts'
 
 const AUTO_ON = { PI_MEMSEARCH_AUTO_CONTEXT: 'on' }
 
@@ -26,22 +33,10 @@ function setup(options: SetupOptions = {}, steps: FakeExecStep[] = []) {
 
 type Harness = ReturnType<typeof setup>
 
-interface InjectedMessage {
-  content: string
-  customType: string
-  display: boolean
-}
-
-function findMessage(results: unknown[]): InjectedMessage | undefined {
-  for (const result of results) {
-    const message = (result as { message?: InjectedMessage } | undefined)?.message
-    if (message) return message
-  }
-  return undefined
-}
-
 async function prompt(harness: Harness, text: string): Promise<InjectedMessage | undefined> {
-  return findMessage(await harness.fire('before_agent_start', { prompt: text, systemPrompt: 'sys' }, harness.ctx))
+  return findInjectedMessage(
+    await harness.fire('before_agent_start', { prompt: text, systemPrompt: 'sys' }, harness.ctx),
+  )
 }
 
 test('stays inert without PI_MEMSEARCH_AUTO_CONTEXT=on', async () => {
@@ -225,6 +220,33 @@ test('the injected block stays within the character budget', async () => {
   ok(message)
   ok(message.content.includes('bigchunk00000001'))
   ok(!message.content.includes('bigchunk00000002'), 'the second block would blow the budget')
+})
+
+test('a single oversized chunk is truncated to the character budget', async () => {
+  const plan: FakeSidecarPlan = (sidecar) => {
+    sidecar.ready()
+    sidecar.onRequest((request) =>
+      sidecar.reply({ hits: [scoredHit('bigchunk00000001', 0.9, 'a'.repeat(5000))], id: request['id'] })
+    )
+  }
+  const harness = setup({ env: AUTO_ON, sidecarPlans: [plan] })
+
+  await harness.fire('session_start', {}, harness.ctx)
+  const message = await prompt(harness, 'anything')
+
+  ok(message)
+  ok(message.content.includes('bigchunk00000001'), 'the chunk hash survives truncation')
+  ok(message.content.length < 2500, `the block was truncated, got ${message.content.length} chars`)
+})
+
+test('a sidecar that ignores stdin EOF at shutdown is killed', async () => {
+  const harness = setup({ env: AUTO_ON, sidecarPlans: [injectingPlan] })
+
+  await harness.fire('session_start', {}, harness.ctx)
+  await harness.fire('session_shutdown', {}, harness.ctx)
+
+  equal(harness.sidecars[0]?.ended, true)
+  equal(harness.sidecars[0]?.killed, true, 'the grace period elapsed without an exit, so the sidecar was killed')
 })
 
 test('the query is the raw prompt truncated to 500 characters', async () => {

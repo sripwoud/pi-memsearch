@@ -1,10 +1,11 @@
-import { equal, match, ok } from 'node:assert/strict'
+import { deepEqual, equal, match, ok } from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { MEMSEARCH_SPEC } from '../../src/contract.ts'
 import { execProcess } from '../../src/exec.ts'
 import { readIndexState } from '../../src/index-state.ts'
-import { assistantEntry, userEntry } from '../harness.ts'
+import { spawnSidecarProcess } from '../../src/sidecar.ts'
+import { assistantEntry, findInjectedMessage, type InjectedMessage, userEntry } from '../harness.ts'
 import { setupLive, SKIP_UNLESS_GATED } from './live.ts'
 
 const SIDECAR_SCRIPT = fileURLToPath(new URL('../../src/sidecar.py', import.meta.url))
@@ -19,20 +20,6 @@ const BULLETS = [
   '- the agent made the tachyon buffer eviction policy FIFO to keep replay order stable',
 ]
   .join('\n')
-
-interface InjectedMessage {
-  content: string
-  customType: string
-  display: boolean
-}
-
-function findMessage(results: unknown[]): InjectedMessage | undefined {
-  for (const result of results) {
-    const message = (result as { message?: InjectedMessage } | undefined)?.message
-    if (message) return message
-  }
-  return undefined
-}
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -88,7 +75,7 @@ describe('auto-context against real memsearch', { skip: SKIP_UNLESS_GATED }, () 
         prompt: 'what did we decide about the tachyon buffer pool?',
         systemPrompt: 'sys',
       })
-      injected = findMessage(results)
+      injected = findInjectedMessage(results)
       if (injected === undefined) {
         const status = await live.toolText('memory_status', {})
         ok(!status.includes('gave-up'), `the sidecar gave up while prompting:\n${status}`)
@@ -122,5 +109,42 @@ describe('auto-context against real memsearch', { skip: SKIP_UNLESS_GATED }, () 
 
   test('shutdown ends the sidecar with the session', async () => {
     await live.fire('session_shutdown')
+  })
+
+  test('a never-indexed collection yields empty hits, not an error', async () => {
+    const proc = spawnSidecarProcess(
+      'uv',
+      ['run', '--no-project', '--with', MEMSEARCH_SPEC, 'python', SIDECAR_SCRIPT],
+      { cwd: live.home },
+    )
+    try {
+      const reply = await new Promise<Record<string, unknown>>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('no reply from the raw sidecar within 240s')), 240_000)
+        proc.onExit(() => {
+          clearTimeout(timer)
+          reject(new Error('the raw sidecar exited before replying'))
+        })
+        proc.onLine((line) => {
+          let data: unknown
+          try {
+            data = JSON.parse(line)
+          } catch {
+            return
+          }
+          const record = data as Record<string, unknown>
+          if (record['event'] === 'ready') {
+            proc.send(JSON.stringify({ collection: 'ms_never_indexed_00000000', id: 1, query: 'anything', top_k: 3 }))
+            return
+          }
+          if (record['id'] === 1) {
+            clearTimeout(timer)
+            resolve(record)
+          }
+        })
+      })
+      deepEqual(reply, { hits: [], id: 1 })
+    } finally {
+      proc.end()
+    }
   })
 })
