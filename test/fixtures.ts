@@ -3,6 +3,26 @@ import type { ExecResult } from '../src/exec.ts'
 
 export const UVX_PREFIX = ['--from', MEMSEARCH_SPEC, 'memsearch']
 
+export const DAY_FILE = `
+## Session 22:41
+
+### 22:41
+<!-- session:s1 turn:t1 transcript:/tmp/a.jsonl -->
+- decided to use redis for the hot cache
+
+### 22:55
+<!-- session:s1 turn:t2 transcript:/tmp/a.jsonl -->
+- dropped the varnish layer
+
+
+## Session 23:10
+
+### 23:10
+<!-- session:s2 turn:t3 transcript:/tmp/b.jsonl -->
+- fixed the login redirect bug
+
+`
+
 export const SEARCH_HITS = [
   {
     chunk_hash: '6c64e3b992dade38',

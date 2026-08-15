@@ -41,6 +41,7 @@ Uninstall with `pi remove npm:pi-memsearch`. The memory markdown under `.memsear
 | Deliberate write | `memory_write` tool                | Persists a memory immediately, on request                                             |
 | Indexing         | `session_start` / write / shutdown | Catch-up index, debounced index 5 s after a write, final index at shutdown            |
 | Recall           | `/recall`, recall skill, two tools | `memory_search` (chunks) → `memory_expand` (section) → origin transcript              |
+| Redaction        | `memory_forget` tool               | Removes one entry from the day file and, via reindex, the collection; no copy kept    |
 | Stable snapshot  | `before_agent_start` hook          | Recent memory appended to the system prompt, byte-identical between checkpoints       |
 | Diagnostics      | `memory_status` tool               | One-call health report — see [Tools](#tools)                                          |
 
@@ -85,9 +86,13 @@ An empty result says so plainly instead of inviting invention.
 
 When the conversation happened in _another_ repo, cross-repo recall widens the search: `/recall --all <query>` (or `memory_search` with `scope: "all"`) fans out across every project found under `PI_MEMSEARCH_SCAN_ROOTS` — one sequential `search -c <collection>` per project, including projects only other mesh agents ever indexed. Hits merge by score, each labeled with its origin project; never-indexed projects are skipped and counted, and the result reports searched/skipped totals. Expansion follows across repos: pass the hit's origin path as `project` to `memory_expand`. Strictly opt-in and read-side only — default recall stays project-scoped, and no store or collection is ever touched ([ADR 0003](docs/adr/0003-no-global-store-cross-repo-recall.md)).
 
+### Redaction
+
+`memory_forget` removes exactly one entry — addressed by `chunk_hash` or `(date, time)`, no fuzzy matching — from its day file; the entry's chunks leave the collection on the next reindex. No copy survives in pi-memsearch — no recovery record, no audit log — so the tool result echoing the removed markdown is the only record, and salvageable facts re-enter via `memory_write`. Session transcripts and git history are outside the guarantee (`docs/adr/0004-redaction-over-recovery.md`).
+
 ### Stable snapshot
 
-At session start, day rollover and after compaction, the package builds one block — usage instructions, the tail of today's memory file (3000 chars) and of yesterday's (2000) — and appends it to the system prompt on every turn. It is byte-identical between those checkpoints, so provider prefix caches survive. Mid-session writes deliberately do not refresh it; their content is already visible in tool history.
+At session start, day rollover, after compaction and after a `memory_forget` redaction, the package builds one block — usage instructions, the tail of today's memory file (3000 chars) and of yesterday's (2000) — and appends it to the system prompt on every turn. It is byte-identical between those checkpoints, so provider prefix caches survive. Mid-session writes deliberately do not refresh it; their content is already visible in tool history.
 
 ### Indexing and serialization
 
@@ -100,6 +105,7 @@ Milvus Lite allows a single client at a time, so every memsearch invocation goes
 | `memory_write`  | —     | Persist a memory now: timestamped, anchored, appended to today's file                                 |
 | `memory_search` | L1    | Top-k scored chunks for a query; `scope: "all"` widens to cross-repo recall                           |
 | `memory_expand` | L2    | Full section for a chunk hash, with its session anchor; `project` routes to a cross-repo hit's origin |
+| `memory_forget` | —     | Redact one entry from store and collection; the tool result is the only record                        |
 | `memory_status` | —     | Doctor: uv/memsearch presence and version, scope, collection, index state, chunk count                |
 
 ## Configuration
@@ -141,7 +147,7 @@ A missing `uv` or memsearch degrades rather than breaks:
 - **Windows** — milvus-lite ships no Windows wheels; use WSL2.
 - **A forked or patched memsearch** — the package orchestrates the released CLI, and invents no memory format of its own.
 
-Deferred rather than rejected — post-v1 candidates are tracked as GitHub issues [#23](https://github.com/sripwoud/pi-memsearch/issues/23), [#24](https://github.com/sripwoud/pi-memsearch/issues/24), [#25](https://github.com/sripwoud/pi-memsearch/issues/25), [#26](https://github.com/sripwoud/pi-memsearch/issues/26), [#27](https://github.com/sripwoud/pi-memsearch/issues/27).
+Deferred rather than rejected — post-v1 candidates are tracked as GitHub issues [#23](https://github.com/sripwoud/pi-memsearch/issues/23), [#24](https://github.com/sripwoud/pi-memsearch/issues/24), [#26](https://github.com/sripwoud/pi-memsearch/issues/26), [#27](https://github.com/sripwoud/pi-memsearch/issues/27).
 
 ## Development
 

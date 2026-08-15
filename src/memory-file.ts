@@ -26,7 +26,11 @@ export function appendMemoryEntry(memoryDir: string, entry: MemoryEntry): string
 }
 
 export function dailyFilePath(memoryDir: string, date: Date): string {
-  return join(memoryDir, `${localDateKey(date)}.md`)
+  return dailyFilePathForKey(memoryDir, localDateKey(date))
+}
+
+export function dailyFilePathForKey(memoryDir: string, dateKey: string): string {
+  return join(memoryDir, `${dateKey}.md`)
 }
 
 export function localDateKey(date: Date): string {
