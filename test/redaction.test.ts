@@ -162,6 +162,22 @@ test('a compact block ends at the next session heading', () => {
   equal(blocks[0]?.text, '## Memory Compact\n\n- condensed')
 })
 
+test('a same-session entry appended after a compact block is not part of the block', () => {
+  const content =
+    '\n## Session 09:00\n\n### 09:00\n<!-- session:s1 turn:t1 transcript:/tmp/a.jsonl -->\n- before compact\n\n\n## Memory Compact\n\n- condensed\n\n### 09:30\n<!-- session:s1 turn:t2 transcript:/tmp/a.jsonl -->\n- after compact\n\n'
+
+  const blocks = listCompactBlocks(content)
+  deepEqual(blocks.map((block) => [block.start, block.end]), [[9, 12]])
+  equal(blocks[0]?.text, '## Memory Compact\n\n- condensed')
+  const target = blocks[0]
+  ok(target)
+
+  const remaining = removeCompactBlock(content, target)
+
+  ok(remaining.includes('- after compact'))
+  ok(!remaining.includes('- condensed'))
+})
+
 test('a section window inside a summary sub-heading resolves to its enclosing block', () => {
   const blocks = compactBlocksForSection(COMPACT_DAY_FILE, { end_line: 15, heading: 'Fixes', start_line: 14 })
 

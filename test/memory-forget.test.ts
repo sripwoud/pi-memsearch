@@ -450,6 +450,34 @@ test('a window spanning two compact blocks is rejected as ambiguous', async () =
   equal(readFileSync(file, 'utf8'), COMPACT_DAY_FILE)
 })
 
+test('a compact-block forget spares a same-session entry appended after the block', async () => {
+  const interleaved =
+    '\n## Session 09:00\n\n### 09:00\n<!-- session:s1 turn:t1 transcript:/tmp/a.jsonl -->\n- before compact\n\n\n## Memory Compact\n\n- condensed\n\n### 09:30\n<!-- session:s1 turn:t2 transcript:/tmp/a.jsonl -->\n- after compact\n\n'
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: lineOf(interleaved, '- after compact'),
+            heading: 'Memory Compact',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: lineOf(interleaved, '## Memory Compact'),
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', interleaved)
+
+  const { text } = await forget(tool, ctx, { chunk_hash: 'feedface00000000' })
+
+  const remaining = readFileSync(file, 'utf8')
+  ok(remaining.includes('- after compact'), 'the appended entry survives the block forget')
+  ok(remaining.includes('- before compact'))
+  ok(!remaining.includes('- condensed'))
+  ok(!text.includes('- after compact'), 'the echo contains only the block')
+})
+
 test('removing the only compact block deletes a file holding just the date title', async () => {
   const { ctx, memoryDir, tool } = setup([
     okResult(VERSION_STDOUT),

@@ -55,13 +55,19 @@ export interface CompactBlock {
   text: string
 }
 
+/**
+ * A same-session entry written after a compact run gets no fresh `## Session` heading, so a bare
+ * timestamp entry heading also ends a block — otherwise removing the block would take the entry.
+ */
 export function listCompactBlocks(content: string): CompactBlock[] {
   const lines = content.split('\n')
   const blocks: CompactBlock[] = []
   for (let index = 0; index < lines.length; index++) {
     if (!COMPACT_HEADING.test(lines[index] as string)) continue
     let end = index + 1
-    while (end < lines.length && !SESSION_BOUNDARY.test(lines[end] as string)) end++
+    while (
+      end < lines.length && !SESSION_BOUNDARY.test(lines[end] as string) && !ENTRY_HEADING.test(lines[end] as string)
+    ) { end++ }
     const body = lines.slice(index, end)
     while (body.length > 0 && (body[body.length - 1] as string).trim() === '') body.pop()
     blocks.push({ end, start: index + 1, text: body.join('\n') })
