@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.0](https://github.com/sripwoud/pi-memsearch/compare/v1.0.0...v1.1.0) (2026-08-15)
+
+
+### Features
+
+* **auto-context:** per-prompt memory injection via warm sidecar ([#45](https://github.com/sripwoud/pi-memsearch/issues/45)) ([2090a15](https://github.com/sripwoud/pi-memsearch/commit/2090a15987d749667e3f59f932ceac2e71557665))
+* **recall:** add opt-in cross-repo recall ([#36](https://github.com/sripwoud/pi-memsearch/issues/36)) ([0153e77](https://github.com/sripwoud/pi-memsearch/commit/0153e77a72f774f0473466da45a439cdebdc8bb5))
+* **skill-drafting:** ship procedural-memory skill drafting ([#44](https://github.com/sripwoud/pi-memsearch/issues/44)) ([6a73647](https://github.com/sripwoud/pi-memsearch/commit/6a73647bbd2a24a4b30067798d4983ef303aef31))
+* **tools:** add memory_compact for on-demand memory compaction ([#39](https://github.com/sripwoud/pi-memsearch/issues/39)) ([905f927](https://github.com/sripwoud/pi-memsearch/commit/905f927c00920a70d1080fe6a80067ca63d936ab))
+* **tools:** add memory_forget with chunk and date-time addressing ([#37](https://github.com/sripwoud/pi-memsearch/issues/37)) ([80a1c65](https://github.com/sripwoud/pi-memsearch/commit/80a1c65d7d8366d8a8e08e9efdb3c6c242d3caf3))
+* **tools:** memory_forget redacts compact blocks by chunk_hash ([#46](https://github.com/sripwoud/pi-memsearch/issues/46)) ([ff9993a](https://github.com/sripwoud/pi-memsearch/commit/ff9993a0e90a8604233cf4c70aa00e46bddcf671))
+
+
+### Bug Fixes
+
+* surface queue waits and abort in-flight commands at shutdown ([#47](https://github.com/sripwoud/pi-memsearch/issues/47)) ([a6dd14a](https://github.com/sripwoud/pi-memsearch/commit/a6dd14a3d0739520efd323e1e20addfd3164f23b))
+
 ## [1.0.0](https://github.com/sripwoud/pi-memsearch/compare/v0.2.0-beta...v1.0.0) (2026-08-14)
 
 
