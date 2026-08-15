@@ -162,8 +162,6 @@ A missing `uv` or memsearch degrades rather than breaks:
 - **Windows** — milvus-lite ships no Windows wheels; use WSL2.
 - **A forked or patched memsearch** — the package orchestrates the released CLI, and invents no memory format of its own.
 
-Deferred rather than rejected — post-v1 candidates are tracked as GitHub issues [#24](https://github.com/sripwoud/pi-memsearch/issues/24), [#26](https://github.com/sripwoud/pi-memsearch/issues/26), [#27](https://github.com/sripwoud/pi-memsearch/issues/27), [#40](https://github.com/sripwoud/pi-memsearch/issues/40).
-
 ## Development
 
 `mise run setup` once, then:
