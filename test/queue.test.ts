@@ -294,6 +294,7 @@ test('a search queued behind memory compaction gets one note naming the holder',
   await tick()
 
   deepEqual(notes, ['waiting on memory compaction'], 'the note lands at enqueue, before the holder finishes')
+  equal(calls.length, 2, 'the queued search has not spawned yet when the note fires')
 
   compact.release()
   await compacting

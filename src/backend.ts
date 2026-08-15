@@ -91,14 +91,10 @@ export function createBackend(deps: BackendDeps): Backend {
     if (holder !== undefined) options.onQueued?.(holder)
     queuedLabels.push(label)
     const next = tail.then(task, task)
-    tail = next.then(
-      () => {
-        queuedLabels.shift()
-      },
-      () => {
-        queuedLabels.shift()
-      },
-    )
+    const settle = () => {
+      queuedLabels.shift()
+    }
+    tail = next.then(settle, settle)
     return next
   }
 
