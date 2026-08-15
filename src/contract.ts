@@ -57,7 +57,10 @@ export interface SearchHit {
 }
 
 export function parseSearchHits(stdout: string): SearchHit[] {
-  const data = parseJson(stdout, 'search')
+  return parseSearchHitList(parseJson(stdout, 'search'))
+}
+
+export function parseSearchHitList(data: unknown): SearchHit[] {
   if (!Array.isArray(data)) throw driftError('search', `expected an array, got ${typeof data}`)
   return data.map((item, index) => {
     const record = asRecord(item, 'search', `result ${index}`)
@@ -73,6 +76,13 @@ export function parseSearchHits(stdout: string): SearchHit[] {
       start_line: requireNumber(record, 'start_line', 'search', at),
     }
   })
+}
+
+export function formatHitBlock(hit: SearchHit, index: number, origin?: string): string {
+  const label = origin === undefined ? '' : ` | ${origin}`
+  return `${index + 1}. score ${
+    hit.score.toFixed(3)
+  } | chunk ${hit.chunk_hash}${label} | ${hit.source}:${hit.start_line}-${hit.end_line}\n${hit.content}`
 }
 
 export interface ExpandedSection {

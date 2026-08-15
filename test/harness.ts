@@ -7,6 +7,7 @@ import type { Complete } from '../src/capture.ts'
 import type { ModelCatalog } from '../src/distillation-model.ts'
 import type { ExecFn, ExecOptions, ExecResult } from '../src/exec.ts'
 import { createMemsearchExtension } from '../src/extension.ts'
+import type { SidecarProcess, SidecarSpawnOptions, SpawnSidecarFn } from '../src/sidecar.ts'
 
 export interface FakeSession {
   sessionId: string
@@ -114,6 +115,88 @@ export function createFakeExec(steps: FakeExecStep[]): { calls: RecordedCall[]; 
   return { calls, exec }
 }
 
+export interface RecordedSpawn {
+  args: string[]
+  command: string
+  options: SidecarSpawnOptions
+}
+
+export interface FakeSidecar {
+  ended: boolean
+  killed: boolean
+  requests: Record<string, unknown>[]
+  emitLine(text: string): void
+  exit(): void
+  onRequest(handler: (request: Record<string, unknown>) => void): void
+  ready(info?: { model?: string; provider?: string }): void
+  reply(payload: object): void
+}
+
+export type FakeSidecarPlan = (sidecar: FakeSidecar) => void
+
+export function createFakeSidecarSpawner(plans: FakeSidecarPlan[]): {
+  sidecars: FakeSidecar[]
+  spawnSidecar: SpawnSidecarFn
+  spawns: RecordedSpawn[]
+} {
+  const spawns: RecordedSpawn[] = []
+  const sidecars: FakeSidecar[] = []
+  const remaining = [...plans]
+  const spawnSidecar: SpawnSidecarFn = (command, args, options) => {
+    spawns.push({ args, command, options })
+    const plan = remaining.shift()
+    if (!plan) throw new Error(`unexpected sidecar spawn: ${command} ${args.join(' ')}`)
+    const lineHandlers: ((line: string) => void)[] = []
+    const exitHandlers: (() => void)[] = []
+    let requestHandler: ((request: Record<string, unknown>) => void) | undefined
+    const sidecar: FakeSidecar = {
+      emitLine(text) {
+        for (const handler of lineHandlers) handler(text)
+      },
+      ended: false,
+      exit() {
+        for (const handler of exitHandlers) handler()
+      },
+      killed: false,
+      onRequest(handler) {
+        requestHandler = handler
+      },
+      ready(info = {}) {
+        sidecar.emitLine(
+          JSON.stringify({ event: 'ready', model: info.model ?? 'test-model', provider: info.provider ?? 'onnx' }),
+        )
+      },
+      reply(payload) {
+        sidecar.emitLine(JSON.stringify(payload))
+      },
+      requests: [],
+    }
+    const proc: SidecarProcess = {
+      end() {
+        sidecar.ended = true
+      },
+      kill() {
+        sidecar.killed = true
+      },
+      onExit(handler) {
+        exitHandlers.push(handler)
+      },
+      onLine(handler) {
+        lineHandlers.push(handler)
+      },
+      send(line) {
+        const request = JSON.parse(line) as Record<string, unknown>
+        sidecar.requests.push(request)
+        requestHandler?.(request)
+      },
+    }
+    sidecars.push(sidecar)
+    queueMicrotask(() => plan(sidecar))
+    return proc
+  }
+  return { sidecars, spawnSidecar, spawns }
+}
+
 export function createFakeContext(options: {
   cwd: string
   session: FakeSession
@@ -161,6 +244,7 @@ export interface SetupOptions {
   onnxModel?: boolean
   prefix?: string
   schedule?: (task: () => Promise<void>) => void
+  sidecarPlans?: FakeSidecarPlan[]
   sleep?: (ms: number) => Promise<void>
 }
 
@@ -189,6 +273,7 @@ export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}
   const home = seedHome(root, { globalConfig: options.globalConfig ?? true, onnxModel: options.onnxModel ?? true })
   const { fire, pi, tools } = createFakePi()
   const { calls, exec } = createFakeExec(steps)
+  const { sidecars, spawnSidecar, spawns } = createFakeSidecarSpawner(options.sidecarPlans ?? [])
   const notices: string[] = []
   const sleeps: number[] = []
   createMemsearchExtension({
@@ -200,6 +285,7 @@ export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}
       ?? (async (ms) => {
         sleeps.push(ms)
       }),
+    spawnSidecar,
     ...(options.complete ? { complete: options.complete } : {}),
   })(pi)
   const ctx = createFakeContext({
@@ -210,5 +296,5 @@ export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}
     ...(options.model ? { model: options.model } : {}),
     ...(options.models ? { models: options.models } : {}),
   })
-  return { calls, ctx, fire, home, notices, root, sleeps, tools }
+  return { calls, ctx, fire, home, notices, root, sidecars, sleeps, spawns, tools }
 }
