@@ -5,9 +5,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createMemsearchExtension } from '../src/extension.ts'
-import { createFakeContext, createFakeExec, createFakePi, type FakePi, type FakeSession, seedHome } from './harness.ts'
-
-const BASE_PROMPT = 'You are pi.'
+import {
+  BASE_PROMPT,
+  createFakeContext,
+  createFakeExec,
+  createFakePi,
+  type FakePi,
+  type FakeSession,
+  prompt,
+  seedHome,
+} from './harness.ts'
 
 const SESSION: FakeSession = {
   entryId: 'ab12cd34',
@@ -36,16 +43,6 @@ function setup(options: { clock?: () => Date; env?: NodeJS.ProcessEnv } = {}) {
 
 async function startSession(fire: FakePi['fire'], ctx: ExtensionContext) {
   await fire('session_start', { reason: 'startup' }, ctx)
-}
-
-async function prompt(fire: FakePi['fire'], ctx: ExtensionContext): Promise<string | undefined> {
-  const results = await fire(
-    'before_agent_start',
-    { prompt: 'hello', systemPrompt: BASE_PROMPT, systemPromptOptions: {} },
-    ctx,
-  )
-  const result = results[0] as { systemPrompt?: string } | undefined
-  return result?.systemPrompt
 }
 
 function injectedBlock(systemPrompt: string | undefined): string {

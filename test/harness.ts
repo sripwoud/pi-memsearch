@@ -22,6 +22,18 @@ export interface FakePi {
   fire(event: string, payload: object, ctx: ExtensionContext): Promise<unknown[]>
 }
 
+export const BASE_PROMPT = 'You are pi.'
+
+export async function prompt(fire: FakePi['fire'], ctx: ExtensionContext): Promise<string | undefined> {
+  const results = await fire(
+    'before_agent_start',
+    { prompt: 'hello', systemPrompt: BASE_PROMPT, systemPromptOptions: {} },
+    ctx,
+  )
+  const result = results[0] as { systemPrompt?: string } | undefined
+  return result?.systemPrompt
+}
+
 export function createFakePi(): FakePi {
   const tools = new Map<string, ToolDefinition>()
   const handlers = new Map<string, EventHandler[]>()
