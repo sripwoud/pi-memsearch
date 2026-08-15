@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { Type } from 'typebox'
 import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
 import { type BootstrapState, createBootstrap, ONNX_DOWNLOAD_NOTICE } from './bootstrap.ts'
@@ -274,6 +274,22 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       },
       label: 'Memory status',
       name: 'memory_status',
+      parameters: Type.Object({}),
+    })
+
+    pi.registerTool({
+      description:
+        "Run memsearch memory compaction: an LLM condenses the shared project memory store and appends the summary to today's daily memory file, which is then re-indexed. This is not pi context compaction — the live conversation is untouched. It spends the user's configured LLM budget, so call it only when the user explicitly asks to compact memory.",
+      execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => {
+        const { collection, options, scope } = resolveTarget(ctx, env, signal)
+        return orInstallInstructions(async () => {
+          await bootstrap.ensure(scope.dir)
+          const summary = await backend.compact(scope.memoryDir, dirname(scope.memoryDir), collection, options)
+          return { content: [{ text: summary, type: 'text' as const }], details: { collection, summary } }
+        })
+      },
+      label: 'Memory compact',
+      name: 'memory_compact',
       parameters: Type.Object({}),
     })
 
