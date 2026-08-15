@@ -12,7 +12,15 @@ import { type ExecFn, execProcess } from './exec.ts'
 import { type IndexState, readIndexState } from './index-state.ts'
 import { createIndexTriggers, SHUTDOWN_CAP_MS } from './indexer.ts'
 import { appendMemoryEntry, dailyFilePathForKey, localDateKey } from './memory-file.ts'
-import { entriesAtTime, entriesForSection, type EntrySection, removeEntry } from './redaction.ts'
+import {
+  type CompactBlock,
+  compactBlocksForSection,
+  entriesAtTime,
+  entriesForSection,
+  type EntrySection,
+  removeCompactBlock,
+  removeEntry,
+} from './redaction.ts'
 import { deriveCollection, type ProjectScope, resolveProjectScope } from './scope.ts'
 import { type SpawnSidecarFn, spawnSidecarProcess } from './sidecar.ts'
 import { buildSnapshot } from './snapshot.ts'
@@ -190,22 +198,28 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       }),
     })
 
-    const redact = (file: string, content: string, entry: EntrySection, cwd: string) => {
-      const remaining = removeEntry(content, entry)
+    const redact = (file: string, remaining: string, removed: string, cwd: string, kind: 'compact block' | 'entry') => {
       if (remaining === '') unlinkSync(file)
       else writeFileSync(file, remaining)
       indexer.noteWrite(cwd)
       onRedact(cwd)
-      const note = remaining === '' ? ' (the file had no other entries and was deleted)' : ''
+      const rest = kind === 'entry' ? 'entries' : 'content'
+      const note = remaining === '' ? ` (the file had no other ${rest} and was deleted)` : ''
       return {
-        content: [{ text: `Memory entry redacted from ${file}${note}:\n\n${entry.text}`, type: 'text' as const }],
-        details: { file, removed: entry.text },
+        content: [{ text: `Memory ${kind} redacted from ${file}${note}:\n\n${removed}`, type: 'text' as const }],
+        details: { file, removed },
       }
     }
 
+    const redactEntry = (file: string, content: string, entry: EntrySection, cwd: string) =>
+      redact(file, removeEntry(content, entry), entry.text, cwd, 'entry')
+
+    const redactCompactBlock = (file: string, content: string, block: CompactBlock, cwd: string) =>
+      redact(file, removeCompactBlock(content, block), block.text, cwd, 'compact block')
+
     pi.registerTool({
       description:
-        'Redact one memory entry from the shared project memory store: the entry leaves its daily memory file and, after reindex, the collection. No copy is kept — the tool result is the only record. Address the entry by chunk_hash (from memory_search) or by date and time (its heading in the daily memory file).',
+        'Redact one memory entry from the shared project memory store: the entry leaves its daily memory file and, after reindex, the collection. No copy is kept — the tool result is the only record. Address the entry by chunk_hash (from memory_search) or by date and time (its heading in the daily memory file). A chunk_hash from inside a "## Memory Compact" block redacts that whole block; memory_compact can regenerate a fresh summary.',
       execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
         const address = parseForgetAddress(params)
         if (address.mode === 'day') {
@@ -220,7 +234,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
               `${matches.length} entries at ${address.time} in ${file}: ambiguous, address one by chunk_hash instead`,
             )
           }
-          return redact(file, content, matches[0] as EntrySection, ctx.cwd)
+          return redactEntry(file, content, matches[0] as EntrySection, ctx.cwd)
         }
         const { collection, options, scope } = resolveTarget(ctx, env, signal)
         return orInstallInstructions(async () => {
@@ -233,14 +247,21 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
             throw new Error(`chunk ${address.chunkHash} points at ${file}, which no longer exists (reindex pending)`)
           const content = readFileSync(file, 'utf8')
           const candidates = entriesForSection(content, section)
-          if (candidates.length === 0)
-            throw new Error(`chunk ${address.chunkHash} does not resolve to a memory entry in ${file}`)
           if (candidates.length > 1) {
             throw new Error(
               `chunk ${address.chunkHash} matches ${candidates.length} entries at ${section.heading} in ${file}: ambiguous, edit the file directly`,
             )
           }
-          return redact(file, content, candidates[0] as EntrySection, ctx.cwd)
+          if (candidates.length === 1) return redactEntry(file, content, candidates[0] as EntrySection, ctx.cwd)
+          const blocks = compactBlocksForSection(content, section)
+          if (blocks.length === 0)
+            throw new Error(`chunk ${address.chunkHash} does not resolve to a memory entry or compact block in ${file}`)
+          if (blocks.length > 1) {
+            throw new Error(
+              `chunk ${address.chunkHash} spans ${blocks.length} compact blocks in ${file}: ambiguous, edit the file directly`,
+            )
+          }
+          return redactCompactBlock(file, content, blocks[0] as CompactBlock, ctx.cwd)
         })
       },
       label: 'Memory forget',

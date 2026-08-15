@@ -4,7 +4,15 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { deriveCollection } from '../src/scope.ts'
-import { DAY_FILE, enoentError, INDEXED_STDOUT, okResult, VERSION_STDOUT } from './fixtures.ts'
+import {
+  COMPACT_DAY_FILE,
+  COMPACT_ONLY_FILE,
+  DAY_FILE,
+  enoentError,
+  INDEXED_STDOUT,
+  okResult,
+  VERSION_STDOUT,
+} from './fixtures.ts'
 import { type FakeExecStep, prompt, setupExtension } from './harness.ts'
 
 function setup(steps: FakeExecStep[]) {
@@ -49,6 +57,10 @@ function expandJson(overrides: {
 
 function lineOf(content: string, line: string): number {
   return content.split('\n').indexOf(line) + 1
+}
+
+function lastLineOf(content: string, line: string): number {
+  return content.split('\n').lastIndexOf(line) + 1
 }
 
 test('date and time remove the matching entry and echo its markdown', async () => {
@@ -334,6 +346,219 @@ test('missing uv returns install instructions for chunk addressing', async () =>
 
   match(text, /astral\.sh\/uv\/install\.sh/)
   equal(readFileSync(file, 'utf8'), DAY_FILE)
+})
+
+test('a chunk_hash inside a compact block removes the whole block', async () => {
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: lineOf(COMPACT_DAY_FILE, '- login redirect resolved'),
+            heading: 'Memory Compact',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: lineOf(COMPACT_DAY_FILE, '## Memory Compact'),
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', COMPACT_DAY_FILE)
+
+  const { details, text } = await forget(tool, ctx, { chunk_hash: 'feedface00000000' })
+
+  const remaining = readFileSync(file, 'utf8')
+  ok(!remaining.includes('- redis owns the hot cache'))
+  ok(!remaining.includes('### Decisions'))
+  ok(remaining.includes('- decided to use redis for the hot cache'), 'entries survive')
+  ok(remaining.includes('- second pass: dropped duplicate notes'), 'the other compact block survives')
+  ok(text.includes('Memory compact block redacted'))
+  ok(text.includes('## Memory Compact'))
+  ok(details.removed.includes('- login redirect resolved'))
+})
+
+test('a chunk stamped with a summary sub-heading removes its whole compact block', async () => {
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: lineOf(COMPACT_DAY_FILE, '- login redirect resolved'),
+            heading: 'Fixes',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: lineOf(COMPACT_DAY_FILE, '### Fixes'),
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', COMPACT_DAY_FILE)
+
+  const { text } = await forget(tool, ctx, { chunk_hash: 'feedface00000000' })
+
+  const remaining = readFileSync(file, 'utf8')
+  ok(!remaining.includes('### Decisions'), 'the block is removed beyond the stamped sub-section')
+  ok(!remaining.includes('- login redirect resolved'))
+  ok(remaining.includes('- second pass: dropped duplicate notes'))
+  ok(text.includes('### Decisions'))
+  ok(text.includes('### Fixes'))
+})
+
+test('only the enclosing compact block is removed when several accumulate', async () => {
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: lineOf(COMPACT_DAY_FILE, '- second pass: dropped duplicate notes'),
+            heading: 'Memory Compact',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: lastLineOf(COMPACT_DAY_FILE, '## Memory Compact'),
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', COMPACT_DAY_FILE)
+
+  await forget(tool, ctx, { chunk_hash: 'feedface00000000' })
+
+  const remaining = readFileSync(file, 'utf8')
+  ok(remaining.includes('- redis owns the hot cache'), 'the first compact block survives')
+  ok(!remaining.includes('- second pass: dropped duplicate notes'))
+})
+
+test('a stale entry chunk overlapping a compact block is rejected without mutating', async () => {
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: lineOf(COMPACT_DAY_FILE, '- redis owns the hot cache'),
+            heading: '22:55',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: lineOf(COMPACT_DAY_FILE, '- decided to use redis for the hot cache'),
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', COMPACT_DAY_FILE)
+
+  await rejects(() => forget(tool, ctx, { chunk_hash: 'feedface00000000' }), /does not resolve/)
+
+  equal(readFileSync(file, 'utf8'), COMPACT_DAY_FILE)
+})
+
+test('a window spanning two compact blocks is rejected as ambiguous', async () => {
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: lastLineOf(COMPACT_DAY_FILE, '## Memory Compact') + 1,
+            heading: 'Memory Compact',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: lineOf(COMPACT_DAY_FILE, '### Fixes'),
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', COMPACT_DAY_FILE)
+
+  await rejects(() => forget(tool, ctx, { chunk_hash: 'feedface00000000' }), /ambiguous/)
+
+  equal(readFileSync(file, 'utf8'), COMPACT_DAY_FILE)
+})
+
+test('a compact-block forget spares a same-session entry appended after the block', async () => {
+  const interleaved =
+    '\n## Session 09:00\n\n### 09:00\n<!-- session:s1 turn:t1 transcript:/tmp/a.jsonl -->\n- before compact\n\n\n## Memory Compact\n\n- condensed\n\n### 09:30\n<!-- session:s1 turn:t2 transcript:/tmp/a.jsonl -->\n- after compact\n\n'
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: lineOf(interleaved, '- after compact'),
+            heading: 'Memory Compact',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: lineOf(interleaved, '## Memory Compact'),
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', interleaved)
+
+  const { text } = await forget(tool, ctx, { chunk_hash: 'feedface00000000' })
+
+  const remaining = readFileSync(file, 'utf8')
+  ok(remaining.includes('- after compact'), 'the appended entry survives the block forget')
+  ok(remaining.includes('- before compact'))
+  ok(!remaining.includes('- condensed'))
+  ok(!text.includes('- after compact'), 'the echo contains only the block')
+})
+
+test('removing the only compact block deletes a file holding just the date title', async () => {
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: lineOf(COMPACT_ONLY_FILE, '- the whole store in one line'),
+            heading: 'Memory Compact',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: lineOf(COMPACT_ONLY_FILE, '## Memory Compact'),
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', COMPACT_ONLY_FILE)
+
+  const { text } = await forget(tool, ctx, { chunk_hash: 'feedface00000000' })
+
+  ok(!existsSync(file))
+  ok(text.includes('deleted'))
+  ok(text.includes('- the whole store in one line'))
+})
+
+test('a compact-block forget reindexes and refreshes the stable snapshot', async () => {
+  let notify: () => void = () => {}
+  const done = new Promise<void>((resolve) => {
+    notify = resolve
+  })
+  const indexStep: FakeExecStep = async () => {
+    notify()
+    return okResult(INDEXED_STDOUT)
+  }
+  const { calls, ctx, fire, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: lineOf(COMPACT_DAY_FILE, '- login redirect resolved'),
+            heading: 'Memory Compact',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: lineOf(COMPACT_DAY_FILE, '## Memory Compact'),
+          }),
+        ),
+      ),
+    indexStep,
+  ])
+  seedDayFile(memoryDir, '2026-08-13', COMPACT_DAY_FILE)
+
+  const first = await prompt(fire, ctx)
+  ok(first?.includes('- redis owns the hot cache'))
+  await forget(tool, ctx, { chunk_hash: 'feedface00000000' })
+  const second = await prompt(fire, ctx)
+  await done
+
+  ok(!second?.includes('- redis owns the hot cache'))
+  ok(second?.includes('- second pass: dropped duplicate notes'))
+  equal(calls.filter((call) => call.args[3] === 'index').length, 1)
 })
 
 test('no copy of the redacted content survives anywhere under the project root', async () => {

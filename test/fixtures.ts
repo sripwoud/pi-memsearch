@@ -23,6 +23,36 @@ export const DAY_FILE = `
 
 `
 
+export const COMPACT_DAY_FILE = `
+## Session 22:41
+
+### 22:41
+<!-- session:s1 turn:t1 transcript:/tmp/a.jsonl -->
+- decided to use redis for the hot cache
+
+
+## Memory Compact
+
+### Decisions
+- redis owns the hot cache
+
+### Fixes
+- login redirect resolved
+
+
+## Memory Compact
+
+- second pass: dropped duplicate notes
+`
+
+export const COMPACT_ONLY_FILE = `# 2026-08-13
+
+
+## Memory Compact
+
+- the whole store in one line
+`
+
 export const SEARCH_HITS = [
   {
     chunk_hash: '6c64e3b992dade38',
