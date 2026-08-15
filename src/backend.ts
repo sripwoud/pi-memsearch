@@ -104,6 +104,7 @@ export function createBackend(deps: BackendDeps): Backend {
 
   function invoke(label: string, args: string[], timeoutMs: number, options: CommandOptions): Promise<ExecResult> {
     return enqueue(label, options, async () => {
+      options.signal?.throwIfAborted()
       for (let attempt = 0;; attempt++) {
         const result = await deps.exec(
           'uvx',

@@ -49,10 +49,11 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     const backend = createBackend({ env, exec, now, sleep })
     const indexer = createIndexTriggers({ backend, env, sleep })
     let captureAbort = new AbortController()
+    let toolAbort = new AbortController()
     let shutdownEpoch = 0
     let onRedact: (cwd: string) => void = () => {}
     const toolOptions = (signal: AbortSignal | undefined, onUpdate?: AgentToolUpdateCallback): CommandOptions => ({
-      ...(signal === undefined ? {} : { signal }),
+      signal: signal === undefined ? toolAbort.signal : AbortSignal.any([signal, toolAbort.signal]),
       ...(onUpdate === undefined ? {} : { onQueued: queuedNote(onUpdate) }),
     })
     registerCapture(pi, {
@@ -68,9 +69,11 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     pi.on('session_start', (_event, ctx) => {
       shutdownEpoch++
       captureAbort = new AbortController()
+      toolAbort = new AbortController()
       indexer.catchUp(ctx.cwd)
     })
     pi.on('session_shutdown', async () => {
+      toolAbort.abort()
       indexer.beginShutdown()
       const epoch = ++shutdownEpoch
       const flushed = (async () => {
@@ -149,7 +152,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
                 }),
               projects: discoverProjects(scanRoots),
               query: params.query,
-              ...(signal ? { signal } : {}),
+              ...(options.signal === undefined ? {} : { signal: options.signal }),
               ...(params.top_k === undefined ? {} : { topK: params.top_k }),
             })
             const text = formatCrossRepoResult(params.query, result)

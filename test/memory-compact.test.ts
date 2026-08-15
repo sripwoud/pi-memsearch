@@ -141,13 +141,20 @@ test('a malformed PI_MEMSEARCH_COMPACT_TIMEOUT_MS fails fast at load', () => {
   )
 })
 
-test('the abort signal is passed through to the backend process', async () => {
-  const { calls, ctx, tool } = setup([okResult(VERSION_STDOUT), okResult(COMPACT_STDOUT)])
+test('aborting the tool signal aborts the backend exec signal', async () => {
   const controller = new AbortController()
+  const observed: Array<boolean | undefined> = []
+  const step = async (call: RecordedCall): Promise<ExecResult> => {
+    observed.push(call.options.signal?.aborted)
+    controller.abort()
+    observed.push(call.options.signal?.aborted)
+    return okResult(COMPACT_STDOUT)
+  }
+  const { ctx, tool } = setup([okResult(VERSION_STDOUT), step])
 
   await tool.execute('call-1', {}, controller.signal, undefined, ctx)
 
-  equal(calls[1]?.options.signal, controller.signal)
+  deepEqual(observed, [false, true])
 })
 
 test('memory compaction runs through the same serialized queue as search', async () => {
