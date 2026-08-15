@@ -1,6 +1,6 @@
 ---
 name: recall
-description: Recall past decisions, fixes, and context from the shared project memory store. Use when the user asks about earlier work ("what did we decide about X", "how did we fix Y", "have we seen this before"), when a question likely predates this session, or when the stable snapshot surfaces a relevant memory entry but lacks detail. Searches scored chunks, expands the best hits, and as a last resort reads the origin session transcript.
+description: Recall past decisions, fixes, and context from the shared project memory store. Use when the user asks about earlier work ("what did we decide about X", "how did we fix Y", "have we seen this before"), when a question likely predates this session, when the stable snapshot surfaces a relevant memory entry but lacks detail, or when a memory may live in another project (cross-repo recall). Searches scored chunks, expands the best hits, and as a last resort reads the origin session transcript.
 ---
 
 # Recall
@@ -14,9 +14,13 @@ Call `memory_search` with the question in natural phrasing. Each hit carries a r
 - Answer directly from the hits when they already settle the question.
 - When nothing relevant comes back, retry once with a paraphrase (different wording, same meaning) before concluding memory has nothing.
 
+### Cross-repo escalation
+
+Only after the project-scoped search and its paraphrase retry both miss — or when the user explicitly asks to search all projects — call `memory_search` again with `scope: "all"`. It fans out across every project under `PI_MEMSEARCH_SCAN_ROOTS`, labels each hit with its origin project path, and reports how many projects were searched and skipped. When it fails because the variable is unset, relay that message instead of retrying. Never escalate while project-scoped hits already answer the question.
+
 ## L2 — expand a section
 
-When a hit looks relevant but truncated, call `memory_expand` with its `chunk_hash`. It returns the full memory-file section and, when the entry was captured from a session, its session anchor: origin session id, entry id, and transcript path.
+When a hit looks relevant but truncated, call `memory_expand` with its `chunk_hash`. It returns the full memory-file section and, when the entry was captured from a session, its session anchor: origin session id, entry id, and transcript path. For a cross-repo hit, also pass its origin project path as `project` so expansion reaches the right collection; the returned anchor makes L3 work across projects too.
 
 ## L3 — read the origin transcript (last resort)
 
