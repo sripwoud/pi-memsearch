@@ -1,26 +1,7 @@
 import { deepEqual, equal, ok } from 'node:assert/strict'
 import { test } from 'node:test'
 import { listEntries, removeEntry } from '../src/redaction.ts'
-
-const DAY_FILE = `
-## Session 22:41
-
-### 22:41
-<!-- session:s1 turn:t1 transcript:/tmp/a.jsonl -->
-- decided to use redis for the hot cache
-
-### 22:55
-<!-- session:s1 turn:t2 transcript:/tmp/a.jsonl -->
-- dropped the varnish layer
-
-
-## Session 23:10
-
-### 23:10
-<!-- session:s2 turn:t3 transcript:/tmp/b.jsonl -->
-- fixed the login redirect bug
-
-`
+import { DAY_FILE } from './fixtures.ts'
 
 test('listEntries finds every timestamp entry with its line range', () => {
   const entries = listEntries(DAY_FILE)
@@ -123,6 +104,16 @@ test('removing every entry one by one drains the file to empty', () => {
   }
 
   equal(content, '')
+})
+
+test('a level-1 title above the sessions is never removed', () => {
+  const content = '# 2026-08-13\n\n## Session 09:00\n\n### 09:00\n- first\n\n### 09:30\n- second\n'
+  const target = listEntries(content).find((entry) => entry.time === '09:30')
+  ok(target)
+
+  const remaining = removeEntry(content, target)
+
+  equal(remaining, '# 2026-08-13\n\n## Session 09:00\n\n### 09:00\n- first\n')
 })
 
 test('a session heading with freeform content under it is kept', () => {

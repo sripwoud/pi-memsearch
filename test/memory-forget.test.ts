@@ -4,30 +4,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { deriveCollection } from '../src/scope.ts'
-import { enoentError, INDEXED_STDOUT, okResult, VERSION_STDOUT } from './fixtures.ts'
-import { type FakeExecStep, type FakePi, setupExtension } from './harness.ts'
-
-const BASE_PROMPT = 'You are pi.'
-
-const DAY_FILE = `
-## Session 22:41
-
-### 22:41
-<!-- session:s1 turn:t1 transcript:/tmp/a.jsonl -->
-- decided to use redis for the hot cache
-
-### 22:55
-<!-- session:s1 turn:t2 transcript:/tmp/a.jsonl -->
-- dropped the varnish layer
-
-
-## Session 23:10
-
-### 23:10
-<!-- session:s2 turn:t3 transcript:/tmp/b.jsonl -->
-- fixed the login redirect bug
-
-`
+import { DAY_FILE, enoentError, INDEXED_STDOUT, okResult, VERSION_STDOUT } from './fixtures.ts'
+import { type FakeExecStep, prompt, setupExtension } from './harness.ts'
 
 function setup(steps: FakeExecStep[]) {
   const harness = setupExtension(steps, { prefix: 'memory-forget-' })
@@ -51,11 +29,18 @@ async function forget(tool: ToolDefinition, ctx: ExtensionContext, params: objec
   return { details: result.details as { file: string; removed: string }, text: first.text }
 }
 
-function expandJson(overrides: { heading?: string; source: string; start_line: number }): string {
+function expandJson(overrides: {
+  anchor?: { session: string; transcript: string; turn: string }
+  end_line?: number
+  heading?: string
+  source: string
+  start_line: number
+}): string {
   return JSON.stringify({
+    ...(overrides.anchor ? { anchor: overrides.anchor } : {}),
     chunk_hash: 'feedface00000000',
     content: '### 22:55\n- dropped the varnish layer',
-    end_line: overrides.start_line + 2,
+    end_line: overrides.end_line ?? overrides.start_line + 2,
     heading: overrides.heading ?? '22:55',
     source: overrides.source,
     start_line: overrides.start_line,
@@ -64,16 +49,6 @@ function expandJson(overrides: { heading?: string; source: string; start_line: n
 
 function lineOf(content: string, line: string): number {
   return content.split('\n').indexOf(line) + 1
-}
-
-async function prompt(fire: FakePi['fire'], ctx: ExtensionContext): Promise<string | undefined> {
-  const results = await fire(
-    'before_agent_start',
-    { prompt: 'hello', systemPrompt: BASE_PROMPT, systemPromptOptions: {} },
-    ctx,
-  )
-  const result = results[0] as { systemPrompt?: string } | undefined
-  return result?.systemPrompt
 }
 
 test('date and time remove the matching entry and echo its markdown', async () => {
@@ -93,10 +68,21 @@ test('date and time remove the matching entry and echo its markdown', async () =
 })
 
 test('a chunk_hash removes the entry containing the chunk', async () => {
+  // Real expand pads the section with context: the window here starts at the previous entry's
+  // heading, so resolution must follow the chunk's own heading and anchor, not the window start.
   const { calls, ctx, memoryDir, root, tool } = setup([okResult(VERSION_STDOUT), (call) => {
     const file = join(memoryDir, '2026-08-13.md')
     equal(call.args[call.args.length - 1], 'feedface00000000')
-    return Promise.resolve(okResult(expandJson({ source: file, start_line: lineOf(DAY_FILE, '### 22:55') })))
+    return Promise.resolve(
+      okResult(
+        expandJson({
+          anchor: { session: 's1', transcript: '/tmp/a.jsonl', turn: 't2' },
+          end_line: lineOf(DAY_FILE, '- dropped the varnish layer'),
+          source: file,
+          start_line: lineOf(DAY_FILE, '### 22:41'),
+        }),
+      ),
+    )
   }])
   const file = seedDayFile(memoryDir)
 
@@ -111,8 +97,76 @@ test('a chunk_hash removes the entry containing the chunk', async () => {
     '--',
     'feedface00000000',
   ])
-  ok(!readFileSync(file, 'utf8').includes('- dropped the varnish layer'))
+  const remaining = readFileSync(file, 'utf8')
+  ok(!remaining.includes('- dropped the varnish layer'))
+  ok(remaining.includes('- decided to use redis for the hot cache'), 'the entry at the window start survived')
   ok(text.includes('- dropped the varnish layer'))
+})
+
+test('same-minute entries are told apart by the chunk anchor', async () => {
+  const twins = [
+    '',
+    '## Session 09:00',
+    '',
+    '### 09:00',
+    '<!-- session:s1 turn:t1 transcript:/tmp/a.jsonl -->',
+    '- first twin',
+    '',
+    '',
+    '## Session 09:30',
+    '',
+    '### 09:00',
+    '<!-- session:s2 turn:t9 transcript:/tmp/b.jsonl -->',
+    '- second twin',
+    '',
+    '',
+  ]
+    .join('\n')
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            anchor: { session: 's2', transcript: '/tmp/b.jsonl', turn: 't9' },
+            end_line: twins.split('\n').length,
+            heading: '09:00',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: 1,
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', twins)
+
+  await forget(tool, ctx, { chunk_hash: 'feedface00000000' })
+
+  const remaining = readFileSync(file, 'utf8')
+  ok(remaining.includes('- first twin'))
+  ok(!remaining.includes('- second twin'))
+})
+
+test('same-minute entries without a distinguishing anchor are rejected as ambiguous', async () => {
+  const twins = '\n## Session 09:00\n\n### 09:00\n- first twin\n\n\n## Session 09:30\n\n### 09:00\n- second twin\n\n'
+  const { ctx, memoryDir, tool } = setup([
+    okResult(VERSION_STDOUT),
+    () =>
+      Promise.resolve(
+        okResult(
+          expandJson({
+            end_line: twins.split('\n').length,
+            heading: '09:00',
+            source: join(memoryDir, '2026-08-13.md'),
+            start_line: 1,
+          }),
+        ),
+      ),
+  ])
+  const file = seedDayFile(memoryDir, '2026-08-13', twins)
+
+  await rejects(() => forget(tool, ctx, { chunk_hash: 'feedface00000000' }), /ambiguous/)
+
+  equal(readFileSync(file, 'utf8'), twins)
 })
 
 test('a chunk_hash combined with date or time is rejected without mutating', async () => {
@@ -240,7 +294,7 @@ test('removing the last entry of a session removes its session heading', async (
   ok(!readFileSync(file, 'utf8').includes('## Session 23:10'))
 })
 
-test('forget schedules a debounced background reindex', async () => {
+test('memory_forget schedules a debounced background reindex', async () => {
   let notify: () => void = () => {}
   const done = new Promise<void>((resolve) => {
     notify = resolve
@@ -258,7 +312,7 @@ test('forget schedules a debounced background reindex', async () => {
   equal(calls.filter((call) => call.args[3] === 'index').length, 1)
 })
 
-test('forget refreshes the stable snapshot immediately', async () => {
+test('memory_forget refreshes the stable snapshot immediately', async () => {
   const { ctx, fire, memoryDir, tool } = setup([okResult(VERSION_STDOUT), okResult(INDEXED_STDOUT)])
   seedDayFile(memoryDir)
 

@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { isAbsolute, relative, resolve } from 'node:path'
 import { Type } from 'typebox'
 import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
 import { type BootstrapState, createBootstrap, ONNX_DOWNLOAD_NOTICE } from './bootstrap.ts'
@@ -10,8 +10,8 @@ import { type CrossRepoResult, discoverProjects, resolveScanRoots, searchAcrossP
 import { type ExecFn, execProcess } from './exec.ts'
 import { type IndexState, readIndexState } from './index-state.ts'
 import { createIndexTriggers, SHUTDOWN_CAP_MS } from './indexer.ts'
-import { appendMemoryEntry, localDateKey } from './memory-file.ts'
-import { type EntrySection, listEntries, removeEntry } from './redaction.ts'
+import { appendMemoryEntry, dailyFilePathForKey, localDateKey } from './memory-file.ts'
+import { entriesAtTime, entriesForSection, type EntrySection, removeEntry } from './redaction.ts'
 import { deriveCollection, type ProjectScope, resolveProjectScope } from './scope.ts'
 import { buildSnapshot } from './snapshot.ts'
 
@@ -197,15 +197,15 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
 
     pi.registerTool({
       description:
-        'Redact one memory entry from the shared project memory store: the entry leaves its day file and, after reindex, the collection. No copy is kept — the tool result is the only record. Address the entry by chunk_hash (from memory_search) or by date and time (its heading in the day file).',
+        'Redact one memory entry from the shared project memory store: the entry leaves its daily memory file and, after reindex, the collection. No copy is kept — the tool result is the only record. Address the entry by chunk_hash (from memory_search) or by date and time (its heading in the daily memory file).',
       execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
         const address = parseForgetAddress(params)
-        const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
         if (address.mode === 'day') {
-          const file = join(scope.memoryDir, `${address.date}.md`)
+          const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
+          const file = dailyFilePathForKey(scope.memoryDir, address.date)
           if (!existsSync(file)) throw new Error(`no daily memory file for ${address.date} at ${file}`)
           const content = readFileSync(file, 'utf8')
-          const matches = listEntries(content).filter((entry) => entry.time === address.time)
+          const matches = entriesAtTime(content, address.time)
           if (matches.length === 0) throw new Error(`no memory entry at ${address.time} in ${file}`)
           if (matches.length > 1) {
             throw new Error(
@@ -214,21 +214,25 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           }
           return redact(file, content, matches[0] as EntrySection, ctx.cwd)
         }
-        const { collection, options } = resolveTarget(ctx, env, signal)
+        const { collection, options, scope } = resolveTarget(ctx, env, signal)
         return orInstallInstructions(async () => {
           const section = await backend.expand(address.chunkHash, collection, options)
-          const file = resolve(section.source)
+          const file = resolve(scope.dir, section.source)
           const fromStore = relative(scope.memoryDir, file)
           if (fromStore.startsWith('..') || isAbsolute(fromStore))
             throw new Error(`chunk ${address.chunkHash} lives in ${section.source}, outside the memory store`)
           if (!existsSync(file))
             throw new Error(`chunk ${address.chunkHash} points at ${file}, which no longer exists (reindex pending)`)
           const content = readFileSync(file, 'utf8')
-          const entry = listEntries(content).find(
-            (candidate) => candidate.start <= section.start_line && section.start_line <= candidate.end,
-          )
-          if (!entry) throw new Error(`chunk ${address.chunkHash} does not resolve to a memory entry in ${file}`)
-          return redact(file, content, entry, ctx.cwd)
+          const candidates = entriesForSection(content, section)
+          if (candidates.length === 0)
+            throw new Error(`chunk ${address.chunkHash} does not resolve to a memory entry in ${file}`)
+          if (candidates.length > 1) {
+            throw new Error(
+              `chunk ${address.chunkHash} matches ${candidates.length} entries at ${section.heading} in ${file}: ambiguous, edit the file directly`,
+            )
+          }
+          return redact(file, content, candidates[0] as EntrySection, ctx.cwd)
         })
       },
       label: 'Memory forget',
