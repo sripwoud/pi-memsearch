@@ -83,6 +83,8 @@ pi  ▸ memory_search → 5 chunks; top: 2026-08-13 "moved the hot cache to Redi
 
 An empty result says so plainly instead of inviting invention.
 
+When the conversation happened in _another_ repo, cross-repo recall widens the search: `/recall --all <query>` (or `memory_search` with `scope: "all"`) fans out across every project found under `PI_MEMSEARCH_SCAN_ROOTS` — one sequential `search -c <collection>` per project, including projects only other mesh agents ever indexed. Hits merge by score, each labeled with its origin project; never-indexed projects are skipped and counted, and the result reports searched/skipped totals. Expansion follows across repos: pass the hit's origin path as `project` to `memory_expand`. Strictly opt-in and read-side only — default recall stays project-scoped, and no store or collection is ever touched ([ADR 0003](docs/adr/0003-no-global-store-cross-repo-recall.md)).
+
 ### Stable snapshot
 
 At session start, day rollover and after compaction, the package builds one block — usage instructions, the tail of today's memory file (3000 chars) and of yesterday's (2000) — and appends it to the system prompt on every turn. It is byte-identical between those checkpoints, so provider prefix caches survive. Mid-session writes deliberately do not refresh it; their content is already visible in tool history.
@@ -93,24 +95,25 @@ Milvus Lite allows a single client at a time, so every memsearch invocation goes
 
 ## Tools
 
-| Tool            | Layer | Purpose                                                                                |
-| --------------- | ----- | -------------------------------------------------------------------------------------- |
-| `memory_write`  | —     | Persist a memory now: timestamped, anchored, appended to today's file                  |
-| `memory_search` | L1    | Top-k scored chunks for a query                                                        |
-| `memory_expand` | L2    | Full section for a chunk hash, with its session anchor                                 |
-| `memory_status` | —     | Doctor: uv/memsearch presence and version, scope, collection, index state, chunk count |
+| Tool            | Layer | Purpose                                                                                               |
+| --------------- | ----- | ----------------------------------------------------------------------------------------------------- |
+| `memory_write`  | —     | Persist a memory now: timestamped, anchored, appended to today's file                                 |
+| `memory_search` | L1    | Top-k scored chunks for a query; `scope: "all"` widens to cross-repo recall                           |
+| `memory_expand` | L2    | Full section for a chunk hash, with its session anchor; `project` routes to a cross-repo hit's origin |
+| `memory_status` | —     | Doctor: uv/memsearch presence and version, scope, collection, index state, chunk count                |
 
 ## Configuration
 
 Everything shared with the mesh — provider, model, chunking — lives in memsearch's own config (`~/.memsearch/config.toml`). Only pi-local behavior is configured here:
 
-| Variable                         | Default                                | Effect                                                                    |
-| -------------------------------- | -------------------------------------- | ------------------------------------------------------------------------- |
-| `PI_MEMSEARCH_CAPTURE`           | on                                     | `off` disables automatic capture; `memory_write` keeps working            |
-| `PI_MEMSEARCH_CAPTURE_MODEL`     | cheapest model of the session provider | Distillation model, as `<id>` or `<provider>/<id>`                        |
-| `PI_MEMSEARCH_SNAPSHOT`          | on                                     | `off` disables snapshot injection                                         |
-| `PI_MEMSEARCH_SEARCH_TIMEOUT_MS` | `30000`                                | Per-attempt timeout for `memory_search`                                   |
-| `MEMSEARCH_DIR`                  | unset                                  | memsearch's own scope override; the memory store and collection follow it |
+| Variable                         | Default                                | Effect                                                                                                 |
+| -------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `PI_MEMSEARCH_CAPTURE`           | on                                     | `off` disables automatic capture; `memory_write` keeps working                                         |
+| `PI_MEMSEARCH_CAPTURE_MODEL`     | cheapest model of the session provider | Distillation model, as `<id>` or `<provider>/<id>`                                                     |
+| `PI_MEMSEARCH_SNAPSHOT`          | on                                     | `off` disables snapshot injection                                                                      |
+| `PI_MEMSEARCH_SEARCH_TIMEOUT_MS` | `30000`                                | Per-attempt timeout for `memory_search` (each cross-repo invocation too)                               |
+| `PI_MEMSEARCH_SCAN_ROOTS`        | unset                                  | `:`-separated directory roots scanned for other projects' memory stores; required by cross-repo recall |
+| `MEMSEARCH_DIR`                  | unset                                  | memsearch's own scope override; the memory store and collection follow it                              |
 
 ## Troubleshooting
 
