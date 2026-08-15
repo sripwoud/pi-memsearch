@@ -35,16 +35,17 @@ Uninstall with `pi remove npm:pi-memsearch`. The memory markdown under `.memsear
 
 ## What it does
 
-| Surface          | pi mechanism                       | Behavior                                                                              |
-| ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------- |
-| Capture          | `agent_settled` hook               | Distills every content-bearing exchange into the daily memory file, in the background |
-| Deliberate write | `memory_write` tool                | Persists a memory immediately, on request                                             |
-| Indexing         | `session_start` / write / shutdown | Catch-up index, debounced index 5 s after a write, final index at shutdown            |
-| Recall           | `/recall`, recall skill, two tools | `memory_search` (chunks) → `memory_expand` (section) → origin transcript              |
-| Redaction        | `memory_forget` tool               | Removes one entry from the day file and, via reindex, the collection; no copy kept    |
-| Maintenance      | `memory_compact` tool              | Memory compaction on request: an LLM condenses the store into today's file            |
-| Stable snapshot  | `before_agent_start` hook          | Recent memory appended to the system prompt, byte-identical between checkpoints       |
-| Diagnostics      | `memory_status` tool               | One-call health report — see [Tools](#tools)                                          |
+| Surface          | pi mechanism                       | Behavior                                                                                               |
+| ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Capture          | `agent_settled` hook               | Distills every content-bearing exchange into the daily memory file, in the background                  |
+| Deliberate write | `memory_write` tool                | Persists a memory immediately, on request                                                              |
+| Indexing         | `session_start` / write / shutdown | Catch-up index, debounced index 5 s after a write, final index at shutdown                             |
+| Recall           | `/recall`, recall skill, two tools | `memory_search` (chunks) → `memory_expand` (section) → origin transcript                               |
+| Skill drafting   | `skill-drafting` skill             | Turns remembered work into skill candidates in memsearch's git-tracked store; installs only on request |
+| Redaction        | `memory_forget` tool               | Removes one entry from the day file and, via reindex, the collection; no copy kept                     |
+| Maintenance      | `memory_compact` tool              | Memory compaction on request: an LLM condenses the store into today's file                             |
+| Stable snapshot  | `before_agent_start` hook          | Recent memory appended to the system prompt, byte-identical between checkpoints                        |
+| Diagnostics      | `memory_status` tool               | One-call health report — see [Tools](#tools)                                                           |
 
 ### Memory store
 

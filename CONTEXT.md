@@ -65,3 +65,13 @@ Per-turn semantic injection of search results into the model's context. Deferred
 **Cross-repo recall**:
 Opt-in recall escalation that searches other projects' collections when project-scoped recall misses, labeling hits by origin project. Read-side only — never a second store.
 _Avoid_: global memory, global search
+
+**Procedural memory**:
+The layer of remembered work expressed as reusable skills, beside the episodic daily memory files. Lives as skill candidates until a human installs one.
+
+**Skill candidate**:
+A drafted skill in memsearch's git-tracked `.memsearch/skill-candidates/` store. Evolves under version control; installing it into an agent's skill directory is always a deliberate human step, never automatic.
+
+**Skill drafting**:
+Turning remembered work into a skill candidate. In pi this is done by the session agent itself — no LLM sub-process is involved.
+_Avoid_: distillation (reserved for the LLM step of capture), skill distillation (memsearch's name for its background pass, which pi cannot run)
