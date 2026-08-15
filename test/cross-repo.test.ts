@@ -5,15 +5,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { SearchHit } from '../src/contract.ts'
+import type { ExecResult } from '../src/exec.ts'
 import { deriveCollection } from '../src/scope.ts'
-import { errResult, MISSING_COLLECTION_STDERR, okResult, VERSION_STDOUT } from './fixtures.ts'
+import { COMPACT_STDOUT, errResult, MISSING_COLLECTION_STDERR, okResult, VERSION_STDOUT } from './fixtures.ts'
 import { createFakeContext, type FakeExecStep, setupExtension, TEST_SESSION } from './harness.ts'
 
 function setup(steps: FakeExecStep[], options: { env?: NodeJS.ProcessEnv } = {}) {
   const { calls, ctx, root, tools } = setupExtension(steps, { ...options, prefix: 'cross-repo-' })
   const tool = tools.get('memory_search')
   ok(tool, 'memory_search tool is registered')
-  return { calls, ctx, root, tool }
+  return { calls, ctx, root, tool, tools }
 }
 
 async function search(
@@ -246,4 +247,43 @@ test('a project whose collection was never indexed is skipped and counted, not f
   ok(text.includes('2 projects searched, 1 skipped'))
   ok(text.includes(`skipped (never indexed on this machine): ${alpha}`))
   ok(text.includes('chunk dddd000000000004'), 'projects after the skipped one are still searched')
+})
+
+test('a cross-repo search queued behind memory compaction still gets one queued note', async () => {
+  const scanRoot = seedScanRoot(['alpha'])
+  let releaseCompact: () => void = () => {}
+  let notifyStarted: () => void = () => {}
+  const compactStarted = new Promise<void>((resolve) => {
+    notifyStarted = resolve
+  })
+  const gatedCompact: FakeExecStep = () => {
+    notifyStarted()
+    return new Promise<ExecResult>((resolve) => {
+      releaseCompact = () => resolve(okResult(COMPACT_STDOUT))
+    })
+  }
+  const { ctx, tool, tools } = setup(
+    [okResult(VERSION_STDOUT), gatedCompact, okResult('[]'), okResult('[]')],
+    { env: { PI_MEMSEARCH_SCAN_ROOTS: scanRoot } },
+  )
+  const compactTool = tools.get('memory_compact')
+  ok(compactTool, 'memory_compact tool is registered')
+
+  const compacting = compactTool.execute('call-1', {}, undefined, undefined, ctx)
+  await compactStarted
+  const notes: string[] = []
+  const searching = tool.execute('call-2', { query: 'redis', scope: 'all' }, undefined, (update) => {
+    const first = update.content[0]
+    if (first?.type === 'text') notes.push(first.text)
+  }, ctx)
+  await new Promise((resolve) => setImmediate(resolve))
+  releaseCompact()
+  await compacting
+  await searching
+
+  deepEqual(
+    notes.filter((note) => note === 'waiting on memory compaction'),
+    ['waiting on memory compaction'],
+    'exactly one queued note across the whole fan-out',
+  )
 })

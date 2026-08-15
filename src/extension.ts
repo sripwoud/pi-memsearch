@@ -152,6 +152,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
                 }),
               projects: discoverProjects(scanRoots),
               query: params.query,
+              ...(options.onQueued === undefined ? {} : { onQueued: options.onQueued }),
               ...(options.signal === undefined ? {} : { signal: options.signal }),
               ...(params.top_k === undefined ? {} : { topK: params.top_k }),
             })
