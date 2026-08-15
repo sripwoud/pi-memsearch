@@ -18,7 +18,7 @@ const STATS_TIMEOUT_MS = 10_000
 const EXPAND_TIMEOUT_MS = 10_000
 const INDEX_TIMEOUT_MS = 120_000
 const DEFAULT_SEARCH_TIMEOUT_MS = 30_000
-const DEFAULT_TOP_K = 5
+export const DEFAULT_TOP_K = 5
 const NEGATIVE_PROBE_TTL_MS = 30_000
 const BACKOFF_DELAYS_MS = [200, 500, 1000, 2000]
 
@@ -44,6 +44,13 @@ export class BackendUnavailableError extends Error {
     super(availability.instructions)
     this.name = 'BackendUnavailableError'
     this.availability = availability
+  }
+}
+
+export class MissingCollectionError extends Error {
+  constructor(command: string, collection: string) {
+    super(`memsearch ${command} failed: collection ${collection} was never indexed on this machine`)
+    this.name = 'MissingCollectionError'
   }
 }
 
@@ -161,10 +168,15 @@ export function createBackend(deps: BackendDeps): Backend {
     args: string[],
     timeoutMs: number,
     options: CommandOptions,
+    collection?: string,
   ): Promise<ExecResult> {
     await ensureAvailable(options)
     const result = await invoke(args, timeoutMs, options)
-    if (result.exitCode !== 0) throw commandError(name, result, timeoutMs)
+    if (result.exitCode !== 0) {
+      if (collection !== undefined && isMissingCollection(result.stderr))
+        throw new MissingCollectionError(name, collection)
+      throw commandError(name, result, timeoutMs)
+    }
     return result
   }
 
@@ -175,13 +187,13 @@ export function createBackend(deps: BackendDeps): Backend {
   ): Promise<SearchHit[]> {
     const topK = options.topK ?? DEFAULT_TOP_K
     const args = ['search', '-j', '-k', String(topK), '-c', collection, '--', query]
-    const result = await runCommand('search', args, searchTimeoutMs, options)
+    const result = await runCommand('search', args, searchTimeoutMs, options, collection)
     return parseSearchHits(result.stdout)
   }
 
   async function expand(chunkHash: string, collection: string, options: CommandOptions = {}): Promise<ExpandedSection> {
     const args = ['expand', '-j', '-c', collection, '--', chunkHash]
-    const result = await runCommand('expand', args, EXPAND_TIMEOUT_MS, options)
+    const result = await runCommand('expand', args, EXPAND_TIMEOUT_MS, options, collection)
     return parseExpandedSection(result.stdout)
   }
 

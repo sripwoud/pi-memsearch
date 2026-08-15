@@ -1,9 +1,11 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
+import { resolve } from 'node:path'
 import { Type } from 'typebox'
 import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
 import { type BootstrapState, createBootstrap, ONNX_DOWNLOAD_NOTICE } from './bootstrap.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
 import { type ExpandedSection, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
+import { type CrossRepoResult, discoverProjects, resolveScanRoots, searchAcrossProjects } from './cross-repo.ts'
 import { type ExecFn, execProcess } from './exec.ts'
 import { type IndexState, readIndexState } from './index-state.ts'
 import { createIndexTriggers, SHUTDOWN_CAP_MS } from './indexer.ts'
@@ -107,11 +109,29 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     pi.registerTool({
       description:
         'Search the shared project memory for past decisions, fixes and context. Returns top-k scored chunks; pass a chunk_hash to memory_expand for the full section.',
-      execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
+      execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
         const { collection, options, scope } = resolveTarget(ctx, env, signal)
+        const scanRoots = params.scope === 'all' ? resolveScanRoots(env) : undefined
         return orInstallInstructions(async () => {
           await bootstrap.ensure(scope.dir)
           if (await bootstrap.claimOnnxDownloadNotice()) ctx.ui.notify(ONNX_DOWNLOAD_NOTICE, 'info')
+          if (scanRoots) {
+            const result = await searchAcrossProjects({
+              backend,
+              currentProject: scope.dir,
+              onProgress: (done, total) =>
+                onUpdate?.({
+                  content: [{ text: `cross-repo search: ${done}/${total} projects`, type: 'text' as const }],
+                  details: { hits: [] },
+                }),
+              projects: discoverProjects(scanRoots),
+              query: params.query,
+              ...(signal ? { signal } : {}),
+              ...(params.top_k === undefined ? {} : { topK: params.top_k }),
+            })
+            const text = formatCrossRepoResult(params.query, result)
+            return { content: [{ text, type: 'text' as const }], details: { ...result } }
+          }
           const hits = await backend.search(
             params.query,
             collection,
@@ -125,6 +145,12 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       name: 'memory_search',
       parameters: Type.Object({
         query: Type.String({ description: 'Semantic search query over the project memory' }),
+        scope: Type.Optional(
+          Type.Union([Type.Literal('project'), Type.Literal('all')], {
+            description:
+              "Search scope: 'project' (default) stays in this project; 'all' fans out across every project under PI_MEMSEARCH_SCAN_ROOTS",
+          }),
+        ),
         top_k: Type.Optional(Type.Integer({ description: 'Number of chunks to return (default 5)', minimum: 1 })),
       }),
     })
@@ -134,8 +160,9 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         'Expand a memory chunk (by chunk_hash from memory_search) into its full section, with the session anchor pointing at the original transcript.',
       execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
         const { collection, options } = resolveTarget(ctx, env, signal)
+        const target = params.project ? deriveCollection(resolve(ctx.cwd, params.project)) : collection
         return orInstallInstructions(async () => {
-          const section = await backend.expand(params.chunk_hash, collection, options)
+          const section = await backend.expand(params.chunk_hash, target, options)
           return { content: [{ text: formatSection(section), type: 'text' as const }], details: { section } }
         })
       },
@@ -143,6 +170,12 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       name: 'memory_expand',
       parameters: Type.Object({
         chunk_hash: Type.String({ description: 'Chunk hash returned by memory_search' }),
+        project: Type.Optional(
+          Type.String({
+            description:
+              "Origin project path from a cross-repo memory_search hit; routes expansion to that project's collection",
+          }),
+        ),
       }),
     })
 
@@ -256,14 +289,27 @@ function describeBootstrap(state: BootstrapState): string {
   }
 }
 
+function formatHitBlock(hit: SearchHit, index: number, origin?: string): string {
+  const label = origin === undefined ? '' : ` | ${origin}`
+  return `${index + 1}. score ${
+    hit.score.toFixed(3)
+  } | chunk ${hit.chunk_hash}${label} | ${hit.source}:${hit.start_line}-${hit.end_line}\n${hit.content}`
+}
+
 function formatHits(hits: SearchHit[]): string {
-  const blocks = hits.map(
-    (hit, index) =>
-      `${index + 1}. score ${
-        hit.score.toFixed(3)
-      } | chunk ${hit.chunk_hash} | ${hit.source}:${hit.start_line}-${hit.end_line}\n${hit.content}`,
-  )
+  const blocks = hits.map((hit, index) => formatHitBlock(hit, index))
   return [`${hits.length} memory chunk(s), best first:`, ...blocks].join('\n\n')
+}
+
+function formatCrossRepoResult(query: string, result: CrossRepoResult): string {
+  const accounting = `${result.searched.length} projects searched, ${result.skipped.length} skipped`
+  const skippedNote = result.skipped.length === 0
+    ? []
+    : [`skipped (never indexed on this machine): ${result.skipped.join(', ')}`]
+  if (result.hits.length === 0)
+    return [`No memories found for "${query}" across ${accounting}.`, ...skippedNote].join('\n')
+  const blocks = result.hits.map((hit, index) => formatHitBlock(hit, index, hit.project))
+  return [`${result.hits.length} memory chunk(s), ${accounting}, best first:`, ...blocks, ...skippedNote].join('\n\n')
 }
 
 function formatSection(section: ExpandedSection): string {
