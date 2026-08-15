@@ -43,6 +43,10 @@ _Avoid_: summarization (in code and docs, to keep it distinct from memsearch's o
 Reading memory back through progressive disclosure: search returns chunks (L1), expand returns the full section (L2), the original transcript is the last resort (L3).
 _Avoid_: retrieval
 
+**Redaction**:
+Destructive removal of one whole memory entry from the memory store and, via reindex, its chunks from the collection. No copy survives anywhere in pi-memsearch — no recovery record, no audit log. Session transcripts and git history are outside the guarantee.
+_Avoid_: delete (generic), forget (the tool name, not the concept)
+
 **Stable snapshot**:
 The byte-stable block of instructions plus recent memory injected into the model's context, refreshed only at checkpoints so prefix caches survive across turns.
 _Avoid_: auto-context (that is the deferred per-turn feature, not this)
