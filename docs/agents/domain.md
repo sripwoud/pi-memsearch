@@ -18,7 +18,8 @@ Single-context repo:
 ├── CONTEXT.md
 ├── docs/adr/
 │   ├── 0001-mesh-parity.md
-│   └── 0002-maximal-capture.md
+│   ├── 0002-maximal-capture.md
+│   └── 0003-no-global-store-cross-repo-recall.md
 └── src/
 ```
 
