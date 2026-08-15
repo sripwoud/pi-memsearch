@@ -31,6 +31,20 @@ export function parseIndexedChunks(stdout: string): number {
   return Number(count)
 }
 
+export function parseCompactSummary(stdout: string): string | undefined {
+  if (/^No chunks to compact\.$/m.test(stdout)) return undefined
+  const marker = /Compact complete\. Summary:\n?/.exec(stdout)
+  const summary = marker === null ? '' : stdout.slice(marker.index + marker[0].length).trim()
+  if (summary === '') {
+    throw new Error(
+      `memsearch compact output drifted: expected "Compact complete. Summary:" and a summary, got "${
+        truncate(stdout)
+      }"`,
+    )
+  }
+  return summary
+}
+
 export interface SearchHit {
   chunk_hash: string
   content: string

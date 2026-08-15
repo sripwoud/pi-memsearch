@@ -47,6 +47,14 @@ _Avoid_: retrieval
 Destructive removal of one whole memory entry from the memory store and, via reindex, its chunks from the collection. No copy survives anywhere in pi-memsearch — no recovery record, no audit log. Session transcripts and git history are outside the guarantee.
 _Avoid_: delete (generic), forget (the tool name, not the concept)
 
+**Context compaction**:
+pi shrinking a session's live conversation when its context window fills (the `session_compact` event). A stable-snapshot refresh checkpoint; touches nothing in the memory store.
+_Avoid_: compaction (unqualified), compact
+
+**Memory compaction**:
+memsearch's `compact` maintenance pass: an LLM condenses the memory store and appends the result to today's daily memory file, which is then re-indexed.
+_Avoid_: compaction (unqualified), compact
+
 **Stable snapshot**:
 The byte-stable block of instructions plus recent memory injected into the model's context, refreshed only at checkpoints so prefix caches survive across turns.
 _Avoid_: auto-context (that is the deferred per-turn feature, not this)

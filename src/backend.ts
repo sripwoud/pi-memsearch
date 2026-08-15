@@ -4,6 +4,7 @@ import {
   isMissingCollection,
   MEMSEARCH_SPEC,
   parseChunkCount,
+  parseCompactSummary,
   parseExpandedSection,
   parseIndexedChunks,
   parseSearchHits,
@@ -18,6 +19,7 @@ const STATS_TIMEOUT_MS = 10_000
 const EXPAND_TIMEOUT_MS = 10_000
 const INDEX_TIMEOUT_MS = 120_000
 const DEFAULT_SEARCH_TIMEOUT_MS = 30_000
+const DEFAULT_COMPACT_TIMEOUT_MS = 300_000
 export const DEFAULT_TOP_K = 5
 const NEGATIVE_PROBE_TTL_MS = 30_000
 const BACKOFF_DELAYS_MS = [200, 500, 1000, 2000]
@@ -59,6 +61,7 @@ export interface CommandOptions {
 }
 
 export interface Backend {
+  compact(outputDir: string, collection: string, options?: CommandOptions): Promise<string | undefined>
   configGet(key: string, options?: CommandOptions): Promise<string>
   configSet(key: string, value: string, options?: CommandOptions): Promise<void>
   expand(chunkHash: string, collection: string, options?: CommandOptions): Promise<ExpandedSection>
@@ -76,7 +79,8 @@ export interface BackendDeps {
 }
 
 export function createBackend(deps: BackendDeps): Backend {
-  const searchTimeoutMs = resolveSearchTimeoutMs(deps.env)
+  const searchTimeoutMs = resolveTimeoutMs(deps.env, 'PI_MEMSEARCH_SEARCH_TIMEOUT_MS', DEFAULT_SEARCH_TIMEOUT_MS)
+  const compactTimeoutMs = resolveTimeoutMs(deps.env, 'PI_MEMSEARCH_COMPACT_TIMEOUT_MS', DEFAULT_COMPACT_TIMEOUT_MS)
   let tail: Promise<unknown> = Promise.resolve()
   let probeCache: { expiresAtMs?: number; result: Promise<Availability> } | undefined
 
@@ -206,6 +210,16 @@ export function createBackend(deps: BackendDeps): Backend {
     await runCommand('config set', ['config', 'set', key, value], CONFIG_TIMEOUT_MS, options)
   }
 
+  async function compact(
+    outputDir: string,
+    collection: string,
+    options: CommandOptions = {},
+  ): Promise<string | undefined> {
+    const args = ['compact', '-o', outputDir, '-c', collection]
+    const result = await runCommand('compact', args, compactTimeoutMs, options)
+    return parseCompactSummary(result.stdout)
+  }
+
   async function index(path: string, collection: string, options: CommandOptions = {}): Promise<number> {
     const result = await runCommand('index', ['index', path, '-c', collection], INDEX_TIMEOUT_MS, options)
     return parseIndexedChunks(result.stdout)
@@ -221,15 +235,15 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseChunkCount(result.stdout)
   }
 
-  return { configGet, configSet, expand, index, probe, search, stats }
+  return { compact, configGet, configSet, expand, index, probe, search, stats }
 }
 
-function resolveSearchTimeoutMs(env: NodeJS.ProcessEnv): number {
-  const raw = env['PI_MEMSEARCH_SEARCH_TIMEOUT_MS']
-  if (raw === undefined || raw === '') return DEFAULT_SEARCH_TIMEOUT_MS
+function resolveTimeoutMs(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
+  const raw = env[key]
+  if (raw === undefined || raw === '') return fallback
   const value = Number(raw)
   if (!Number.isInteger(value) || value <= 0)
-    throw new Error(`PI_MEMSEARCH_SEARCH_TIMEOUT_MS must be a positive integer of milliseconds, got "${raw}"`)
+    throw new Error(`${key} must be a positive integer of milliseconds, got "${raw}"`)
   return value
 }
 

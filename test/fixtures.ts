@@ -70,6 +70,13 @@ export const STATS_STDOUT = 'Total indexed chunks: 42\n'
 
 export const INDEXED_STDOUT = 'Indexed 3 chunks.\n'
 
+export const COMPACT_SUMMARY =
+  '## Compacted memories\n\n- consolidated the redis cache decisions into one entry\n- dropped the duplicate login-redirect notes'
+
+export const COMPACT_STDOUT = `Compact complete. Summary:\n\n${COMPACT_SUMMARY}\n`
+
+export const COMPACT_NOOP_STDOUT = 'No chunks to compact.\n'
+
 export const LOCK_STDERR_0417 =
   'Traceback (most recent call last):\n  File "cli.py", line 288, in cli\nRuntimeError: Could not open the local Milvus database at /home/user/.memsearch/milvus.db: it may be corrupted, from an incompatible Milvus Lite release, or another process already has the database open (Milvus Lite allows a single client at a time).\n'
 
