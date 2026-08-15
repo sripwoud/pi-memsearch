@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
-import { resolve } from 'node:path'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import { Type } from 'typebox'
 import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
 import { type BootstrapState, createBootstrap, ONNX_DOWNLOAD_NOTICE } from './bootstrap.ts'
@@ -10,6 +11,7 @@ import { type ExecFn, execProcess } from './exec.ts'
 import { type IndexState, readIndexState } from './index-state.ts'
 import { createIndexTriggers, SHUTDOWN_CAP_MS } from './indexer.ts'
 import { appendMemoryEntry, localDateKey } from './memory-file.ts'
+import { type EntrySection, listEntries, removeEntry } from './redaction.ts'
 import { deriveCollection, type ProjectScope, resolveProjectScope } from './scope.ts'
 import { buildSnapshot } from './snapshot.ts'
 
@@ -36,6 +38,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     const indexer = createIndexTriggers({ backend, env, sleep })
     let captureAbort = new AbortController()
     let shutdownEpoch = 0
+    let onRedact: (cwd: string) => void = () => {}
     registerCapture(pi, {
       complete: deps.complete,
       distillationTimeoutMs: deps.distillationTimeoutMs ?? DEFAULT_DISTILLATION_TIMEOUT_MS,
@@ -179,6 +182,66 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       }),
     })
 
+    const redact = (file: string, content: string, entry: EntrySection, cwd: string) => {
+      const remaining = removeEntry(content, entry)
+      if (remaining === '') unlinkSync(file)
+      else writeFileSync(file, remaining)
+      indexer.noteWrite(cwd)
+      onRedact(cwd)
+      const note = remaining === '' ? ' (the file had no other entries and was deleted)' : ''
+      return {
+        content: [{ text: `Memory entry redacted from ${file}${note}:\n\n${entry.text}`, type: 'text' as const }],
+        details: { file, removed: entry.text },
+      }
+    }
+
+    pi.registerTool({
+      description:
+        'Redact one memory entry from the shared project memory store: the entry leaves its day file and, after reindex, the collection. No copy is kept — the tool result is the only record. Address the entry by chunk_hash (from memory_search) or by date and time (its heading in the day file).',
+      execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
+        const address = parseForgetAddress(params)
+        const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
+        if (address.mode === 'day') {
+          const file = join(scope.memoryDir, `${address.date}.md`)
+          if (!existsSync(file)) throw new Error(`no daily memory file for ${address.date} at ${file}`)
+          const content = readFileSync(file, 'utf8')
+          const matches = listEntries(content).filter((entry) => entry.time === address.time)
+          if (matches.length === 0) throw new Error(`no memory entry at ${address.time} in ${file}`)
+          if (matches.length > 1) {
+            throw new Error(
+              `${matches.length} entries at ${address.time} in ${file}: ambiguous, address one by chunk_hash instead`,
+            )
+          }
+          return redact(file, content, matches[0] as EntrySection, ctx.cwd)
+        }
+        const { collection, options } = resolveTarget(ctx, env, signal)
+        return orInstallInstructions(async () => {
+          const section = await backend.expand(address.chunkHash, collection, options)
+          const file = resolve(section.source)
+          const fromStore = relative(scope.memoryDir, file)
+          if (fromStore.startsWith('..') || isAbsolute(fromStore))
+            throw new Error(`chunk ${address.chunkHash} lives in ${section.source}, outside the memory store`)
+          if (!existsSync(file))
+            throw new Error(`chunk ${address.chunkHash} points at ${file}, which no longer exists (reindex pending)`)
+          const content = readFileSync(file, 'utf8')
+          const entry = listEntries(content).find(
+            (candidate) => candidate.start <= section.start_line && section.start_line <= candidate.end,
+          )
+          if (!entry) throw new Error(`chunk ${address.chunkHash} does not resolve to a memory entry in ${file}`)
+          return redact(file, content, entry, ctx.cwd)
+        })
+      },
+      label: 'Memory forget',
+      name: 'memory_forget',
+      parameters: Type.Object({
+        chunk_hash: Type.Optional(
+          Type.String({ description: 'Chunk hash from memory_search; redacts the entry containing that chunk' }),
+        ),
+        date: Type.Optional(Type.String({ description: 'Daily memory file date (YYYY-MM-DD); pair with time' })),
+        time: Type.Optional(Type.String({ description: 'Entry heading time (HH:MM); pair with date' })),
+      }),
+    })
+
     pi.registerTool({
       description:
         'Diagnose the shared project memory backend: uv/memsearch availability and version, project scope, collection, and indexed chunk count.',
@@ -222,6 +285,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       snapshotDate = localDateKey(timestamp)
       return snapshot
     }
+    onRedact = refreshSnapshot
 
     pi.on('session_start', (_event, ctx) => {
       refreshSnapshot(ctx.cwd)
@@ -255,6 +319,27 @@ interface RecallTarget {
   collection: string
   options: { signal?: AbortSignal }
   scope: ProjectScope
+}
+
+interface ForgetParams {
+  chunk_hash?: string
+  date?: string
+  time?: string
+}
+
+type ForgetAddress = { chunkHash: string; mode: 'chunk' } | { date: string; mode: 'day'; time: string }
+
+function parseForgetAddress(params: ForgetParams): ForgetAddress {
+  const byChunk = params.chunk_hash !== undefined
+  const byDay = params.date !== undefined || params.time !== undefined
+  if (byChunk === byDay)
+    throw new Error('memory_forget takes exactly one address: a chunk_hash alone, or date and time together')
+  if (byChunk) return { chunkHash: params.chunk_hash as string, mode: 'chunk' }
+  if (params.date === undefined || params.time === undefined)
+    throw new Error('memory_forget by day needs date and time together')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(params.date)) throw new Error(`date must be YYYY-MM-DD, got "${params.date}"`)
+  if (!/^\d{2}:\d{2}$/.test(params.time)) throw new Error(`time must be HH:MM, got "${params.time}"`)
+  return { date: params.date, mode: 'day', time: params.time }
 }
 
 function resolveTarget(ctx: ExtensionContext, env: NodeJS.ProcessEnv, signal: AbortSignal | undefined): RecallTarget {
