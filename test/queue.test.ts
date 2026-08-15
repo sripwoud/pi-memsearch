@@ -1,11 +1,14 @@
-import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
+import type { AgentToolUpdateCallback, ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { deepEqual, equal, ok, rejects } from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ExecResult } from '../src/exec.ts'
+import { SHUTDOWN_CAP_MS } from '../src/indexer.ts'
 import {
+  COMPACT_STDOUT,
   CONFIG_ERROR_STDERR,
   errResult,
   INCOMPATIBLE_DB_STDERR,
+  INDEXED_STDOUT,
   LOCK_STDERR_0416,
   LOCK_STDERR_0417,
   LOCK_STDERR_MILVUS_LITE_3X,
@@ -17,20 +20,75 @@ import {
 import { type FakeExecStep, setupExtension } from './harness.ts'
 
 function setup(steps: FakeExecStep[], sleepImpl?: (ms: number) => Promise<void>) {
-  const { calls, ctx, sleeps, tools } = setupExtension(
+  const { calls, ctx, fire, sleeps, tools } = setupExtension(
     steps,
     sleepImpl ? { prefix: 'memory-queue-', sleep: sleepImpl } : { prefix: 'memory-queue-' },
   )
   const tool = tools.get('memory_search')
   ok(tool, 'memory_search tool is registered')
-  return { calls, ctx, sleeps, tool }
+  return { calls, ctx, fire, sleeps, tool, tools }
 }
 
-async function search(tool: ToolDefinition, ctx: ExtensionContext, signal?: AbortSignal): Promise<string> {
-  const result = await tool.execute('call-1', { query: 'redis' }, signal, undefined, ctx)
+async function search(
+  tool: ToolDefinition,
+  ctx: ExtensionContext,
+  signal?: AbortSignal,
+  onUpdate?: AgentToolUpdateCallback,
+): Promise<string> {
+  const result = await tool.execute('call-1', { query: 'redis' }, signal, onUpdate, ctx)
   const first = result.content[0]
   ok(first?.type === 'text')
   return first.text
+}
+
+function gate(result: ExecResult): { release(): void; started: Promise<void>; step: FakeExecStep } {
+  let release: () => void = () => {}
+  let notifyStarted: () => void = () => {}
+  const started = new Promise<void>((resolve) => {
+    notifyStarted = resolve
+  })
+  const step: FakeExecStep = () => {
+    notifyStarted()
+    return new Promise<ExecResult>((resolve) => {
+      release = () => resolve(result)
+    })
+  }
+  return { release: () => release(), started, step }
+}
+
+function noteRecorder(): { notes: string[]; onUpdate: AgentToolUpdateCallback } {
+  const notes: string[] = []
+  const onUpdate: AgentToolUpdateCallback = (update) => {
+    const first = update.content[0]
+    if (first?.type === 'text') notes.push(first.text)
+  }
+  return { notes, onUpdate }
+}
+
+function tick(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
+function neverCapSleep(ms: number): Promise<void> {
+  return ms >= SHUTDOWN_CAP_MS ? new Promise<void>(() => {}) : Promise.resolve()
+}
+
+function hangUntilAborted(): { started: Promise<void>; step: FakeExecStep } {
+  let notifyStarted: () => void = () => {}
+  const started = new Promise<void>((resolve) => {
+    notifyStarted = resolve
+  })
+  const step: FakeExecStep = (call) => {
+    notifyStarted()
+    return new Promise<ExecResult>((_resolve, reject) => {
+      call.options.signal?.addEventListener('abort', () => reject(call.options.signal?.reason), { once: true })
+    })
+  }
+  return { started, step }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
 }
 
 test('lock contention (0.4.16 phrasing) retries with backoff, invisibly to the caller', async () => {
@@ -149,11 +207,125 @@ test('concurrent tool calls are serialized through the single-flight queue', asy
   equal(calls.filter((call) => call.args.includes('--version')).length, 1)
 })
 
-test('the abort signal is passed through to the backend process', async () => {
-  const { calls, ctx, tool } = setup([okResult(VERSION_STDOUT), okResult(SEARCH_JSON)])
+test('aborting the tool signal aborts the backend exec signal', async () => {
   const controller = new AbortController()
+  const observed: Array<boolean | undefined> = []
+  const step: FakeExecStep = async (call) => {
+    observed.push(call.options.signal?.aborted)
+    controller.abort()
+    observed.push(call.options.signal?.aborted)
+    return okResult(SEARCH_JSON)
+  }
+  const { ctx, tool } = setup([okResult(VERSION_STDOUT), step])
 
   await search(tool, ctx, controller.signal)
 
-  equal(calls[1]?.options.signal, controller.signal)
+  deepEqual(observed, [false, true])
+})
+
+test('shutdown aborts an in-flight memory compaction so the final index runs inside the cap', async () => {
+  const compact = hangUntilAborted()
+  const { calls, ctx, fire, tools } = setup(
+    [okResult(VERSION_STDOUT), compact.step, okResult(INDEXED_STDOUT)],
+    neverCapSleep,
+  )
+  const compactTool = tools.get('memory_compact')
+  const writeTool = tools.get('memory_write')
+  ok(compactTool && writeTool)
+
+  const compacting = compactTool.execute('call-1', {}, undefined, undefined, ctx)
+  await compact.started
+  await writeTool.execute('call-2', { content: '- written just before quitting' }, undefined, undefined, ctx)
+  await tick()
+
+  const shutdown = fire('session_shutdown', { reason: 'quit' }, ctx)
+
+  await rejects(() => compacting, isAbortError)
+  await shutdown
+
+  const compactCall = calls.find((call) => call.args.includes('compact'))
+  ok(compactCall?.options.signal?.aborted, 'the in-flight compaction was aborted at shutdown start')
+  const indexCall = calls.find((call) => call.args.includes('index'))
+  ok(indexCall, 'the final index of pending writes still ran')
+  equal(indexCall.options.signal?.aborted, false, 'the final index kept its own unaborted signal')
+})
+
+test('a queued command settles promptly on shutdown abort instead of spawning', async () => {
+  const compact = hangUntilAborted()
+  const { calls, ctx, fire, tool, tools } = setup([okResult(VERSION_STDOUT), compact.step], neverCapSleep)
+  const compactTool = tools.get('memory_compact')
+  ok(compactTool)
+
+  const compacting = compactTool.execute('call-1', {}, undefined, undefined, ctx)
+  await compact.started
+  const searching = search(tool, ctx)
+  await tick()
+
+  const shutdown = fire('session_shutdown', { reason: 'quit' }, ctx)
+
+  await rejects(() => compacting, isAbortError)
+  await rejects(() => searching, isAbortError)
+  await shutdown
+
+  equal(calls.length, 2, 'the queued search never spawned a process')
+})
+
+test('a new session runs tool commands with a fresh, unaborted signal', async () => {
+  const { calls, ctx, fire, tool } = setup([okResult(VERSION_STDOUT), okResult(SEARCH_JSON)], neverCapSleep)
+
+  await fire('session_shutdown', { reason: 'new' }, ctx)
+  await fire('session_start', { reason: 'new' }, ctx)
+  const text = await search(tool, ctx)
+
+  ok(text.includes('memory chunk'))
+  equal(calls[1]?.options.signal?.aborted, false)
+})
+
+test('a search queued behind memory compaction gets one note naming the holder', async () => {
+  const compact = gate(okResult(COMPACT_STDOUT))
+  const { calls, ctx, tool, tools } = setup([okResult(VERSION_STDOUT), compact.step, okResult(SEARCH_JSON)])
+  const compactTool = tools.get('memory_compact')
+  ok(compactTool, 'memory_compact tool is registered')
+
+  const compacting = compactTool.execute('call-1', {}, undefined, undefined, ctx)
+  await compact.started
+  const { notes, onUpdate } = noteRecorder()
+  const searching = search(tool, ctx, undefined, onUpdate)
+  await tick()
+
+  deepEqual(notes, ['waiting on memory compaction'], 'the note lands at enqueue, before the holder finishes')
+  equal(calls.length, 2, 'the queued search has not spawned yet when the note fires')
+
+  compact.release()
+  await compacting
+  ok((await searching).includes('memory chunk'))
+  deepEqual(notes, ['waiting on memory compaction'], 'the note fires exactly once, never periodically')
+  const searchCall = calls.find((call) => call.args.includes('search'))
+  equal(searchCall?.options.timeoutMs, 30_000, 'time spent queued does not count toward the exec timeout')
+})
+
+test('a search on an idle queue emits no queued note', async () => {
+  const { ctx, tool } = setup([okResult(VERSION_STDOUT), okResult(SEARCH_JSON)])
+  const { notes, onUpdate } = noteRecorder()
+
+  const text = await search(tool, ctx, undefined, onUpdate)
+
+  ok(text.includes('memory chunk'))
+  deepEqual(notes, [])
+})
+
+test('the queued note names whichever command holds the queue', async () => {
+  const holder = gate(okResult(SEARCH_JSON))
+  const { ctx, tool } = setup([okResult(VERSION_STDOUT), holder.step, okResult(SEARCH_JSON)])
+
+  const first = search(tool, ctx)
+  await holder.started
+  const { notes, onUpdate } = noteRecorder()
+  const second = search(tool, ctx, undefined, onUpdate)
+  await tick()
+
+  deepEqual(notes, ['waiting on search'])
+
+  holder.release()
+  await Promise.all([first, second])
 })

@@ -57,6 +57,7 @@ export class MissingCollectionError extends Error {
 }
 
 export interface CommandOptions {
+  onQueued?(holder: string): void
   signal?: AbortSignal
 }
 
@@ -82,19 +83,24 @@ export function createBackend(deps: BackendDeps): Backend {
   const searchTimeoutMs = resolveTimeoutMs(deps.env, 'PI_MEMSEARCH_SEARCH_TIMEOUT_MS', DEFAULT_SEARCH_TIMEOUT_MS)
   const compactTimeoutMs = resolveTimeoutMs(deps.env, 'PI_MEMSEARCH_COMPACT_TIMEOUT_MS', DEFAULT_COMPACT_TIMEOUT_MS)
   let tail: Promise<unknown> = Promise.resolve()
+  const queuedLabels: string[] = []
   let probeCache: { expiresAtMs?: number; result: Promise<Availability> } | undefined
 
-  function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  function enqueue<T>(label: string, options: CommandOptions, task: () => Promise<T>): Promise<T> {
+    const holder = queuedLabels[0]
+    if (holder !== undefined) options.onQueued?.(holder)
+    queuedLabels.push(label)
     const next = tail.then(task, task)
-    tail = next.then(
-      () => undefined,
-      () => undefined,
-    )
+    const settle = () => {
+      queuedLabels.shift()
+    }
+    tail = next.then(settle, settle)
     return next
   }
 
-  function invoke(args: string[], timeoutMs: number, options: CommandOptions): Promise<ExecResult> {
-    return enqueue(async () => {
+  function invoke(label: string, args: string[], timeoutMs: number, options: CommandOptions): Promise<ExecResult> {
+    return enqueue(label, options, async () => {
+      options.signal?.throwIfAborted()
       for (let attempt = 0;; attempt++) {
         const result = await deps.exec(
           'uvx',
@@ -113,7 +119,7 @@ export function createBackend(deps: BackendDeps): Backend {
   async function runProbe(options: CommandOptions): Promise<Availability> {
     let result: ExecResult
     try {
-      result = await invoke(['--version'], VERSION_TIMEOUT_MS, options)
+      result = await invoke('availability probe', ['--version'], VERSION_TIMEOUT_MS, options)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT')
         return { available: false, instructions: UV_INSTRUCTIONS, reason: 'uv-missing' }
@@ -175,7 +181,7 @@ export function createBackend(deps: BackendDeps): Backend {
     collection?: string,
   ): Promise<ExecResult> {
     await ensureAvailable(options)
-    const result = await invoke(args, timeoutMs, options)
+    const result = await invoke(holderLabel(name), args, timeoutMs, options)
     if (result.exitCode !== 0) {
       if (collection !== undefined && isMissingCollection(result.stderr))
         throw new MissingCollectionError(name, collection)
@@ -227,7 +233,7 @@ export function createBackend(deps: BackendDeps): Backend {
 
   async function stats(collection: string, options: CommandOptions = {}): Promise<number | 'missing'> {
     await ensureAvailable(options)
-    const result = await invoke(['stats', '-c', collection], STATS_TIMEOUT_MS, options)
+    const result = await invoke('stats', ['stats', '-c', collection], STATS_TIMEOUT_MS, options)
     if (result.exitCode !== 0) {
       if (isMissingCollection(result.stderr)) return 'missing'
       throw commandError('stats', result, STATS_TIMEOUT_MS)
@@ -245,6 +251,10 @@ function resolveTimeoutMs(env: NodeJS.ProcessEnv, key: string, fallback: number)
   if (!Number.isInteger(value) || value <= 0)
     throw new Error(`${key} must be a positive integer of milliseconds, got "${raw}"`)
   return value
+}
+
+function holderLabel(name: string): string {
+  return name === 'compact' ? 'memory compaction' : name
 }
 
 function commandError(name: string, result: ExecResult, timeoutMs: number): Error {

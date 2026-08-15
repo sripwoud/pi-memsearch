@@ -56,6 +56,7 @@ export interface CrossRepoSearch {
   backend: Backend
   currentProject: string
   onProgress?: (done: number, total: number) => void
+  onQueued?: (holder: string) => void
   projects: string[]
   query: string
   signal?: AbortSignal
@@ -68,6 +69,7 @@ export async function searchAcrossProjects(params: CrossRepoSearch): Promise<Cro
   const searched: string[] = []
   const skipped: string[] = []
   const options = {
+    ...(params.onQueued === undefined ? {} : { onQueued: params.onQueued }),
     ...(params.signal ? { signal: params.signal } : {}),
     ...(params.topK === undefined ? {} : { topK: params.topK }),
   }

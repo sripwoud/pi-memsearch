@@ -1,9 +1,9 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
+import type { AgentToolUpdateCallback, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { Type } from 'typebox'
 import { AUTO_CONTEXT_ENV, type AutoContextStatus, createAutoContext } from './auto-context.ts'
-import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
+import { type Backend, BackendUnavailableError, type CommandOptions, createBackend } from './backend.ts'
 import { type BootstrapState, createBootstrap, ONNX_DOWNLOAD_NOTICE } from './bootstrap.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
 import { type ExpandedSection, formatHitBlock, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
@@ -49,8 +49,13 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     const backend = createBackend({ env, exec, now, sleep })
     const indexer = createIndexTriggers({ backend, env, sleep })
     let captureAbort = new AbortController()
+    let toolAbort = new AbortController()
     let shutdownEpoch = 0
     let onRedact: (cwd: string) => void = () => {}
+    const toolOptions = (signal: AbortSignal | undefined, onUpdate?: AgentToolUpdateCallback): CommandOptions => ({
+      signal: signal === undefined ? toolAbort.signal : AbortSignal.any([signal, toolAbort.signal]),
+      ...(onUpdate === undefined ? {} : { onQueued: queuedNote(onUpdate) }),
+    })
     registerCapture(pi, {
       complete: deps.complete,
       distillationTimeoutMs: deps.distillationTimeoutMs ?? DEFAULT_DISTILLATION_TIMEOUT_MS,
@@ -64,9 +69,11 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     pi.on('session_start', (_event, ctx) => {
       shutdownEpoch++
       captureAbort = new AbortController()
+      toolAbort = new AbortController()
       indexer.catchUp(ctx.cwd)
     })
     pi.on('session_shutdown', async () => {
+      toolAbort.abort()
       indexer.beginShutdown()
       const epoch = ++shutdownEpoch
       const flushed = (async () => {
@@ -129,7 +136,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       description:
         'Search the shared project memory for past decisions, fixes and context. Returns top-k scored chunks; pass a chunk_hash to memory_expand for the full section.',
       execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
-        const { collection, options, scope } = resolveTarget(ctx, env, signal)
+        const { collection, options, scope } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
         const scanRoots = params.scope === 'all' ? resolveScanRoots(env) : undefined
         return orInstallInstructions(async () => {
           await bootstrap.ensure(scope.dir)
@@ -145,7 +152,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
                 }),
               projects: discoverProjects(scanRoots),
               query: params.query,
-              ...(signal ? { signal } : {}),
+              ...(options.onQueued === undefined ? {} : { onQueued: options.onQueued }),
+              ...(options.signal === undefined ? {} : { signal: options.signal }),
               ...(params.top_k === undefined ? {} : { topK: params.top_k }),
             })
             const text = formatCrossRepoResult(params.query, result)
@@ -177,8 +185,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     pi.registerTool({
       description:
         'Expand a memory chunk (by chunk_hash from memory_search) into its full section, with the session anchor pointing at the original transcript.',
-      execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
-        const { collection, options } = resolveTarget(ctx, env, signal)
+      execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
+        const { collection, options } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
         const target = params.project ? deriveCollection(resolve(ctx.cwd, params.project)) : collection
         return orInstallInstructions(async () => {
           const section = await backend.expand(params.chunk_hash, target, options)
@@ -220,7 +228,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     pi.registerTool({
       description:
         'Redact one memory entry from the shared project memory store: the entry leaves its daily memory file and, after reindex, the collection. No copy is kept — the tool result is the only record. Address the entry by chunk_hash (from memory_search) or by date and time (its heading in the daily memory file). A chunk_hash from inside a "## Memory Compact" block redacts that whole block; memory_compact can regenerate a fresh summary.',
-      execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
+      execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
         const address = parseForgetAddress(params)
         if (address.mode === 'day') {
           const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
@@ -236,7 +244,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           }
           return redactEntry(file, content, matches[0] as EntrySection, ctx.cwd)
         }
-        const { collection, options, scope } = resolveTarget(ctx, env, signal)
+        const { collection, options, scope } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
         return orInstallInstructions(async () => {
           const section = await backend.expand(address.chunkHash, collection, options)
           const file = resolve(scope.dir, section.source)
@@ -278,8 +286,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     pi.registerTool({
       description:
         'Diagnose the shared project memory backend: uv/memsearch availability and version, project scope, collection, and indexed chunk count.',
-      execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => {
-        const { collection, options, scope } = resolveTarget(ctx, env, signal)
+      execute: async (_toolCallId, _params, signal, onUpdate, ctx) => {
+        const { collection, options, scope } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
         const availability = await backend.probe(options)
         const bootstrapState = await bootstrap.ensure(scope.dir)
 
@@ -310,8 +318,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     pi.registerTool({
       description:
         "Run memsearch memory compaction: an LLM condenses the shared project memory store and appends the summary to today's daily memory file, which is then re-indexed. This is not pi context compaction — the live conversation is untouched. It spends the user's configured LLM budget, so call it only when the user explicitly asks to compact memory.",
-      execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => {
-        const { collection, options, scope } = resolveTarget(ctx, env, signal)
+      execute: async (_toolCallId, _params, signal, onUpdate, ctx) => {
+        const { collection, options, scope } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
         return orInstallInstructions(async () => {
           await bootstrap.ensure(scope.dir)
           const summary = await backend.compact(dirname(scope.memoryDir), collection, options)
@@ -377,8 +385,17 @@ function createBackgroundQueue(): BackgroundQueue {
 
 interface RecallTarget {
   collection: string
-  options: { signal?: AbortSignal }
+  options: CommandOptions
   scope: ProjectScope
+}
+
+function queuedNote(onUpdate: AgentToolUpdateCallback): (holder: string) => void {
+  let noted = false
+  return (holder) => {
+    if (noted) return
+    noted = true
+    onUpdate({ content: [{ text: `waiting on ${holder}`, type: 'text' }], details: { queuedBehind: holder } })
+  }
 }
 
 interface ForgetParams {
@@ -402,9 +419,9 @@ function parseForgetAddress(params: ForgetParams): ForgetAddress {
   return { date: params.date, mode: 'day', time: params.time }
 }
 
-function resolveTarget(ctx: ExtensionContext, env: NodeJS.ProcessEnv, signal: AbortSignal | undefined): RecallTarget {
+function resolveTarget(ctx: ExtensionContext, env: NodeJS.ProcessEnv, options: CommandOptions): RecallTarget {
   const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
-  return { collection: deriveCollection(scope.dir), options: signal ? { signal } : {}, scope }
+  return { collection: deriveCollection(scope.dir), options, scope }
 }
 
 async function orInstallInstructions<T>(run: () => Promise<T>) {
