@@ -42,7 +42,7 @@ test('recall skill instructs the layered tool workflow', () => {
 test('/recall template frontmatter declares description and argument hint', () => {
   const { fields } = parseResource('../prompts/recall.md')
   ok((fields['description'] ?? '').length > 0)
-  equal(fields['argument-hint'], '<query>')
+  equal(fields['argument-hint'], '[--all] <query>')
 })
 
 test('/recall template hands the query to the recall skill', () => {
