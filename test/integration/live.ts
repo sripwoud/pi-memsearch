@@ -22,7 +22,7 @@ export interface LiveHarness {
   branch: SessionEntry[]
   collection: string
   dataDirLockPath: string
-  fire(event: string, payload?: object): Promise<void>
+  fire(event: string, payload?: object): Promise<unknown[]>
   home: string
   lockedOutAttempts(): number
   memoryDir: string
@@ -73,9 +73,7 @@ export function setupLive(options: { complete?: Complete } = {}): LiveHarness {
     branch,
     collection: deriveCollection(root),
     dataDirLockPath: join(home, '.memsearch', 'milvus.db', 'LOCK'),
-    async fire(event, payload = {}) {
-      await fire(event, payload, ctx)
-    },
+    fire: (event, payload = {}) => fire(event, payload, ctx),
     home,
     lockedOutAttempts: () => lockedOut.length,
     memoryDir: join(root, '.memsearch', 'memory'),

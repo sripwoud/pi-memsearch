@@ -35,17 +35,18 @@ Uninstall with `pi remove npm:pi-memsearch`. The memory markdown under `.memsear
 
 ## What it does
 
-| Surface          | pi mechanism                       | Behavior                                                                                               |
-| ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Capture          | `agent_settled` hook               | Distills every content-bearing exchange into the daily memory file, in the background                  |
-| Deliberate write | `memory_write` tool                | Persists a memory immediately, on request                                                              |
-| Indexing         | `session_start` / write / shutdown | Catch-up index, debounced index 5 s after a write, final index at shutdown                             |
-| Recall           | `/recall`, recall skill, two tools | `memory_search` (chunks) → `memory_expand` (section) → origin transcript                               |
-| Skill drafting   | `skill-drafting` skill             | Turns remembered work into skill candidates in memsearch's git-tracked store; installs only on request |
-| Redaction        | `memory_forget` tool               | Removes one entry from the day file and, via reindex, the collection; no copy kept                     |
-| Maintenance      | `memory_compact` tool              | Memory compaction on request: an LLM condenses the store into today's file                             |
-| Stable snapshot  | `before_agent_start` hook          | Recent memory appended to the system prompt, byte-identical between checkpoints                        |
-| Diagnostics      | `memory_status` tool               | One-call health report — see [Tools](#tools)                                                           |
+| Surface          | pi mechanism                             | Behavior                                                                                               |
+| ---------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Capture          | `agent_settled` hook                     | Distills every content-bearing exchange into the daily memory file, in the background                  |
+| Deliberate write | `memory_write` tool                      | Persists a memory immediately, on request                                                              |
+| Indexing         | `session_start` / write / shutdown       | Catch-up index, debounced index 5 s after a write, final index at shutdown                             |
+| Recall           | `/recall`, recall skill, two tools       | `memory_search` (chunks) → `memory_expand` (section) → origin transcript                               |
+| Skill drafting   | `skill-drafting` skill                   | Turns remembered work into skill candidates in memsearch's git-tracked store; installs only on request |
+| Redaction        | `memory_forget` tool                     | Removes one entry from the day file and, via reindex, the collection; no copy kept                     |
+| Maintenance      | `memory_compact` tool                    | Memory compaction on request: an LLM condenses the store into today's file                             |
+| Stable snapshot  | `before_agent_start` hook                | Recent memory appended to the system prompt, byte-identical between checkpoints                        |
+| Auto-context     | `before_agent_start` hook + warm sidecar | Opt-in: top memory chunks injected per prompt within a 300 ms budget                                   |
+| Diagnostics      | `memory_status` tool                     | One-call health report — see [Tools](#tools)                                                           |
 
 ### Memory store
 
@@ -100,34 +101,39 @@ When the conversation happened in _another_ repo, cross-repo recall widens the s
 
 At session start, day rollover, after context compaction and after a `memory_forget` redaction, the package builds one block — usage instructions, the tail of today's memory file (3000 chars) and of yesterday's (2000) — and appends it to the system prompt on every turn. It is byte-identical between those checkpoints, so provider prefix caches survive. Mid-session writes deliberately do not refresh it; their content is already visible in tool history.
 
+### Auto-context
+
+Opt-in (`PI_MEMSEARCH_AUTO_CONTEXT=on`): every user prompt runs a semantic search over the project collection and injects up to 3 chunks (score ≥ 0.5, ~2000 chars total, `memory_search` format — any injected chunk hash chains into `memory_expand`) as a message invisible in the TUI. A per-session Python sidecar (`uv run`, same pinned memsearch spec, same config resolution) keeps the embedding model warm for the whole session and opens a throwaway store per prompt, so the machine-wide Milvus Lite lock is borrowed for milliseconds and other mesh agents stay unblocked. The search races a **300 ms hard cap**: a miss, an empty result, a locked store or a crashed sidecar all degrade to no injection — the prompt never waits on memory. Crashes respawn lazily, capped at 2 per session; past the cap auto-context is off for the session. Costs ~0.7–1.0 GB resident memory while on; remote embedding providers will often miss the cap (documented limitation, not special-cased). Chunks already verbatim in the stable snapshot are dropped, and the injection lands after the prefix-cache boundary the new prompt already invalidates, so cache stability is untouched. Design and rejected alternatives: [ADR 0005](docs/adr/0005-per-session-sidecar-auto-context.md).
+
 ### Indexing and serialization
 
 Milvus Lite allows a single client at a time, so every memsearch invocation goes through one queue and retries a locked-out call with backoff (200 ms, 500 ms, 1 s, 2 s). Contention from another agent in the mesh resolves without surfacing as an error. `memsearch watch` is never used. Shutdown flushes the pending capture and runs a final index within a 15 s cap.
 
 ## Tools
 
-| Tool             | Layer | Purpose                                                                                               |
-| ---------------- | ----- | ----------------------------------------------------------------------------------------------------- |
-| `memory_write`   | —     | Persist a memory now: timestamped, anchored, appended to today's file                                 |
-| `memory_search`  | L1    | Top-k scored chunks for a query; `scope: "all"` widens to cross-repo recall                           |
-| `memory_expand`  | L2    | Full section for a chunk hash, with its session anchor; `project` routes to a cross-repo hit's origin |
-| `memory_forget`  | —     | Redact one entry from store and collection; the tool result is the only record                        |
-| `memory_compact` | —     | Memory compaction on explicit request; returns memsearch's markdown summary                           |
-| `memory_status`  | —     | Doctor: uv/memsearch presence and version, scope, collection, index state, chunk count                |
+| Tool             | Layer | Purpose                                                                                                                 |
+| ---------------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
+| `memory_write`   | —     | Persist a memory now: timestamped, anchored, appended to today's file                                                   |
+| `memory_search`  | L1    | Top-k scored chunks for a query; `scope: "all"` widens to cross-repo recall                                             |
+| `memory_expand`  | L2    | Full section for a chunk hash, with its session anchor; `project` routes to a cross-repo hit's origin                   |
+| `memory_forget`  | —     | Redact one entry from store and collection; the tool result is the only record                                          |
+| `memory_compact` | —     | Memory compaction on explicit request; returns memsearch's markdown summary                                             |
+| `memory_status`  | —     | Doctor: uv/memsearch presence and version, scope, collection, index state, chunk count, auto-context state and counters |
 
 ## Configuration
 
 Everything shared with the mesh — provider, model, chunking — lives in memsearch's own config (`~/.memsearch/config.toml`). Only pi-local behavior is configured here:
 
-| Variable                          | Default                                | Effect                                                                                                 |
-| --------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `PI_MEMSEARCH_CAPTURE`            | on                                     | `off` disables automatic capture; `memory_write` keeps working                                         |
-| `PI_MEMSEARCH_CAPTURE_MODEL`      | cheapest model of the session provider | Distillation model, as `<id>` or `<provider>/<id>`                                                     |
-| `PI_MEMSEARCH_SNAPSHOT`           | on                                     | `off` disables snapshot injection                                                                      |
-| `PI_MEMSEARCH_SEARCH_TIMEOUT_MS`  | `30000`                                | Per-attempt timeout for `memory_search` (each cross-repo invocation too)                               |
-| `PI_MEMSEARCH_COMPACT_TIMEOUT_MS` | `300000`                               | Per-attempt timeout for `memory_compact` (LLM pass plus reindex)                                       |
-| `PI_MEMSEARCH_SCAN_ROOTS`         | unset                                  | `:`-separated directory roots scanned for other projects' memory stores; required by cross-repo recall |
-| `MEMSEARCH_DIR`                   | unset                                  | memsearch's own scope override; the memory store and collection follow it                              |
+| Variable                          | Default                                | Effect                                                                                                    |
+| --------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `PI_MEMSEARCH_CAPTURE`            | on                                     | `off` disables automatic capture; `memory_write` keeps working                                            |
+| `PI_MEMSEARCH_CAPTURE_MODEL`      | cheapest model of the session provider | Distillation model, as `<id>` or `<provider>/<id>`                                                        |
+| `PI_MEMSEARCH_SNAPSHOT`           | on                                     | `off` disables snapshot injection                                                                         |
+| `PI_MEMSEARCH_AUTO_CONTEXT`       | off                                    | `on` enables per-prompt injection via a warm sidecar (~1 GB resident) — see [Auto-context](#auto-context) |
+| `PI_MEMSEARCH_SEARCH_TIMEOUT_MS`  | `30000`                                | Per-attempt timeout for `memory_search` (each cross-repo invocation too)                                  |
+| `PI_MEMSEARCH_COMPACT_TIMEOUT_MS` | `300000`                               | Per-attempt timeout for `memory_compact` (LLM pass plus reindex)                                          |
+| `PI_MEMSEARCH_SCAN_ROOTS`         | unset                                  | `:`-separated directory roots scanned for other projects' memory stores; required by cross-repo recall    |
+| `MEMSEARCH_DIR`                   | unset                                  | memsearch's own scope override; the memory store and collection follow it                                 |
 
 ## Troubleshooting
 
@@ -147,6 +153,7 @@ A missing `uv` or memsearch degrades rather than breaks:
 | A just-written memory is not found        | The debounced index (5 s after a write) has not run yet                                    | Retry in a moment; shutdown and session start also index                        |
 | Search finds nothing after the repo moved | The collection name hashes the absolute path                                               | The next session start catch-up indexes into the new collection                 |
 | Nothing is captured                       | `PI_MEMSEARCH_CAPTURE=off`, or the exchange failed a gate (no assistant text, aborted run) | `memory_status` shows the active config                                         |
+| Auto-context injects nothing              | Budget misses (slow machine, remote provider), an empty collection, or the sidecar gave up | `memory_status` shows sidecar state and per-prompt skip counters                |
 
 ## Unsupported
 
@@ -155,7 +162,7 @@ A missing `uv` or memsearch degrades rather than breaks:
 - **Windows** — milvus-lite ships no Windows wheels; use WSL2.
 - **A forked or patched memsearch** — the package orchestrates the released CLI, and invents no memory format of its own.
 
-Deferred rather than rejected — post-v1 candidates are tracked as GitHub issues [#23](https://github.com/sripwoud/pi-memsearch/issues/23), [#24](https://github.com/sripwoud/pi-memsearch/issues/24), [#26](https://github.com/sripwoud/pi-memsearch/issues/26), [#27](https://github.com/sripwoud/pi-memsearch/issues/27).
+Deferred rather than rejected — post-v1 candidates are tracked as GitHub issues [#24](https://github.com/sripwoud/pi-memsearch/issues/24), [#26](https://github.com/sripwoud/pi-memsearch/issues/26), [#27](https://github.com/sripwoud/pi-memsearch/issues/27), [#40](https://github.com/sripwoud/pi-memsearch/issues/40).
 
 ## Development
 

@@ -2,10 +2,11 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { Type } from 'typebox'
+import { AUTO_CONTEXT_ENV, type AutoContextStatus, createAutoContext } from './auto-context.ts'
 import { type Backend, BackendUnavailableError, createBackend } from './backend.ts'
 import { type BootstrapState, createBootstrap, ONNX_DOWNLOAD_NOTICE } from './bootstrap.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
-import { type ExpandedSection, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
+import { type ExpandedSection, formatHitBlock, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
 import { type CrossRepoResult, discoverProjects, resolveScanRoots, searchAcrossProjects } from './cross-repo.ts'
 import { type ExecFn, execProcess } from './exec.ts'
 import { type IndexState, readIndexState } from './index-state.ts'
@@ -13,6 +14,7 @@ import { createIndexTriggers, SHUTDOWN_CAP_MS } from './indexer.ts'
 import { appendMemoryEntry, dailyFilePathForKey, localDateKey } from './memory-file.ts'
 import { entriesAtTime, entriesForSection, type EntrySection, removeEntry } from './redaction.ts'
 import { deriveCollection, type ProjectScope, resolveProjectScope } from './scope.ts'
+import { type SpawnSidecarFn, spawnSidecarProcess } from './sidecar.ts'
 import { buildSnapshot } from './snapshot.ts'
 
 export interface MemsearchDeps {
@@ -23,6 +25,7 @@ export interface MemsearchDeps {
   now(): Date
   schedule(task: () => Promise<void>): void
   sleep(ms: number): Promise<void>
+  spawnSidecar: SpawnSidecarFn
 }
 
 export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi: ExtensionAPI) => void {
@@ -32,6 +35,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
   const schedule = deps.schedule ?? queue.schedule
   const exec = deps.exec ?? execProcess
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const spawnSidecar = deps.spawnSidecar ?? spawnSidecarProcess
 
   return (pi) => {
     const backend = createBackend({ env, exec, now, sleep })
@@ -76,6 +80,10 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         await bootstrap.ensure(scope.dir)
       })
     })
+
+    let snapshot: string | undefined
+    let snapshotDate: string | undefined
+    const autoContext = createAutoContext({ env, getSnapshot: () => snapshot, now, sleep, spawnSidecar })
 
     pi.registerTool({
       description:
@@ -265,6 +273,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         if (failure !== undefined) lines.push(`last index run: failed (${failure})`)
         if (availability.available)
           lines.push(await describeChunkCount(backend, collection, options))
+        lines.push(...describeAutoContext(autoContext.status()))
 
         const text = lines.join('\n')
         return {
@@ -294,30 +303,39 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       parameters: Type.Object({}),
     })
 
-    if (env['PI_MEMSEARCH_SNAPSHOT'] === 'off') return
+    if (env['PI_MEMSEARCH_SNAPSHOT'] !== 'off') {
+      const refreshSnapshot = (cwd: string): string => {
+        const timestamp = now()
+        const scope = resolveProjectScope({ baseDir: cwd, env })
+        snapshot = buildSnapshot(scope.memoryDir, timestamp)
+        snapshotDate = localDateKey(timestamp)
+        return snapshot
+      }
 
-    let snapshot: string | undefined
-    let snapshotDate: string | undefined
-
-    const refreshSnapshot = (cwd: string): string => {
-      const timestamp = now()
-      const scope = resolveProjectScope({ baseDir: cwd, env })
-      snapshot = buildSnapshot(scope.memoryDir, timestamp)
-      snapshotDate = localDateKey(timestamp)
-      return snapshot
+      pi.on('session_start', (_event, ctx) => {
+        refreshSnapshot(ctx.cwd)
+      })
+      pi.on('session_compact', (_event, ctx) => {
+        refreshSnapshot(ctx.cwd)
+      })
+      pi.on('before_agent_start', (event, ctx) => {
+        const block = snapshot !== undefined && snapshotDate === localDateKey(now())
+          ? snapshot
+          : refreshSnapshot(ctx.cwd)
+        return { systemPrompt: `${event.systemPrompt}\n\n${block}` }
+      })
+      onRedact = refreshSnapshot
     }
-    onRedact = refreshSnapshot
 
-    pi.on('session_start', (_event, ctx) => {
-      refreshSnapshot(ctx.cwd)
-    })
-    pi.on('session_compact', (_event, ctx) => {
-      refreshSnapshot(ctx.cwd)
-    })
-    pi.on('before_agent_start', (event, ctx) => {
-      const block = snapshot !== undefined && snapshotDate === localDateKey(now()) ? snapshot : refreshSnapshot(ctx.cwd)
-      return { systemPrompt: `${event.systemPrompt}\n\n${block}` }
-    })
+    if (autoContext.enabled) {
+      pi.on('session_start', (_event, ctx) => {
+        autoContext.start(resolveProjectScope({ baseDir: ctx.cwd, env }).dir)
+      })
+      pi.on('session_shutdown', () => {
+        autoContext.stop()
+      })
+      pi.on('before_agent_start', (event) => autoContext.onPrompt(event.prompt))
+    }
   }
 }
 
@@ -384,6 +402,23 @@ function unavailableResult(error: BackendUnavailableError) {
   }
 }
 
+function describeAutoContext(status: AutoContextStatus): string[] {
+  if (!status.enabled) return [`auto-context: off (set ${AUTO_CONTEXT_ENV}=on to enable)`]
+  const identity = [
+    status.state ?? 'warming',
+    ...(status.provider === undefined ? [] : [`provider ${status.provider}`]),
+    ...(status.model === undefined ? [] : [`model ${status.model}`]),
+  ]
+    .join(', ')
+  const { injected, prompts, skippedBudget, skippedEmpty, skippedError } = status.counters
+  const lines = [
+    `auto-context: on (${identity})`,
+    `auto-context prompts: ${prompts} seen, ${injected} injected, ${skippedBudget} skipped-budget, ${skippedEmpty} skipped-empty, ${skippedError} skipped-error`,
+  ]
+  if (status.lastInjectionMs !== undefined) lines.push(`auto-context last injection: ${status.lastInjectionMs}ms`)
+  return lines
+}
+
 function describeBootstrap(state: BootstrapState): string {
   switch (state.status) {
     case 'bootstrapped':
@@ -393,13 +428,6 @@ function describeBootstrap(state: BootstrapState): string {
     case 'failed':
       return `bootstrap: failed (${state.reason})`
   }
-}
-
-function formatHitBlock(hit: SearchHit, index: number, origin?: string): string {
-  const label = origin === undefined ? '' : ` | ${origin}`
-  return `${index + 1}. score ${
-    hit.score.toFixed(3)
-  } | chunk ${hit.chunk_hash}${label} | ${hit.source}:${hit.start_line}-${hit.end_line}\n${hit.content}`
 }
 
 function formatHits(hits: SearchHit[]): string {
