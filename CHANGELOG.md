@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/sripwoud/pi-memsearch/compare/v1.1.1...v1.2.0) (2026-08-18)
+
+
+### Features
+
+* **tools:** declare promptSnippet on the six memory tools ([#61](https://github.com/sripwoud/pi-memsearch/issues/61)) ([cb4acf7](https://github.com/sripwoud/pi-memsearch/commit/cb4acf7dc4282c9b7f7dcac1ca31d8c27f598d99))
+* **tools:** surface pending skill candidates in memory_status ([#63](https://github.com/sripwoud/pi-memsearch/issues/63)) ([75a1302](https://github.com/sripwoud/pi-memsearch/commit/75a1302b9494d0805d99041efcd189f9c9d9f3a8)), closes [#51](https://github.com/sripwoud/pi-memsearch/issues/51)
+
 ## [1.1.1](https://github.com/sripwoud/pi-memsearch/compare/v1.1.0...v1.1.1) (2026-08-18)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "pi-memsearch",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "memsearch-backed long-term memory for pi",
   "keywords": [
     "pi-package",
