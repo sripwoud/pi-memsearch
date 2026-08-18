@@ -1,11 +1,23 @@
 {
   "name": "pi-memsearch",
   "version": "1.1.1",
-  "description": "memsearch-backed long-term memory for pi",
+  "description": "Long-term memory for pi — semantic recall over a memsearch store shared with Claude Code, Codex and OpenCode",
   "keywords": [
     "pi-package",
+    "pi",
+    "pi-extension",
+    "pi-coding-agent",
+    "memory",
+    "long-term-memory",
+    "semantic-search",
+    "vector-search",
+    "recall",
     "memsearch",
-    "memory"
+    "milvus",
+    "rag",
+    "claude-code",
+    "codex",
+    "opencode"
   ],
   "license": "MIT",
   "repository": {
