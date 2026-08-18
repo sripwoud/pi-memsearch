@@ -7,7 +7,7 @@
 
 </div>
 
-[memsearch](https://zilliztech.github.io/memsearch/)-backed long-term memory for [pi](https://pi.dev): pi writes to and recalls from the same per-project memory store that Claude Code, Codex, OpenClaw and OpenCode already share.
+Long-term memory for [pi](https://pi.dev), backed by [memsearch](https://zilliztech.github.io/memsearch/): pi writes to and recalls from the same per-project memory store that Claude Code, Codex, OpenClaw and OpenCode already share.
 
 ## Why
 
