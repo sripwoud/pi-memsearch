@@ -134,6 +134,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           description: 'Memory entry: third-person markdown bullets, in the primary language of the conversation',
         }),
       }),
+      promptSnippet: 'Persist a memory entry to the shared project memory store',
     })
 
     pi.registerTool({
@@ -184,6 +185,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         ),
         top_k: Type.Optional(Type.Integer({ description: 'Number of chunks to return (default 5)', minimum: 1 })),
       }),
+      promptSnippet: 'Search project memory for past decisions, fixes and context',
     })
 
     pi.registerTool({
@@ -208,6 +210,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           }),
         ),
       }),
+      promptSnippet: 'Expand a memory_search chunk into its full section',
     })
 
     const redact = (file: string, remaining: string, removed: string, cwd: string, kind: 'compact block' | 'entry') => {
@@ -285,6 +288,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         date: Type.Optional(Type.String({ description: 'Daily memory file date (YYYY-MM-DD); pair with time' })),
         time: Type.Optional(Type.String({ description: 'Entry heading time (HH:MM); pair with date' })),
       }),
+      promptSnippet: 'Redact a memory entry from the project memory store',
     })
 
     pi.registerTool({
@@ -317,6 +321,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       label: 'Memory status',
       name: 'memory_status',
       parameters: Type.Object({}),
+      promptSnippet: 'Diagnose the memory backend (availability, scope, index health)',
     })
 
     pi.registerTool({
@@ -334,6 +339,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       label: 'Memory compact',
       name: 'memory_compact',
       parameters: Type.Object({}),
+      promptSnippet: 'Condense the project memory store with an LLM summary',
     })
 
     if (env['PI_MEMSEARCH_SNAPSHOT'] !== 'off') {
