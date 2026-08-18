@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/sripwoud/pi-memsearch/compare/v1.1.0...v1.1.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* **exec:** force utf-8 on memsearch child streams ([#57](https://github.com/sripwoud/pi-memsearch/issues/57)) ([a24a6ee](https://github.com/sripwoud/pi-memsearch/commit/a24a6ee165c72ee775384a7a9dbf1822ab3d2427))
+* **exec:** run memsearch children at the repository directory ([#53](https://github.com/sripwoud/pi-memsearch/issues/53)) ([7edc294](https://github.com/sripwoud/pi-memsearch/commit/7edc294b8893838b734bd0ec079a0347072d505d))
+
 ## [1.1.0](https://github.com/sripwoud/pi-memsearch/compare/v1.0.0...v1.1.0) (2026-08-15)
 
 
