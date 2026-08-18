@@ -60,6 +60,7 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
   })
 
   test('search recalls the captured memory from a paraphrased query', async () => {
+    await live.restartSession()
     const text = await live.toolText('memory_search', {
       query: 'which vector database did we settle on for the flux-capacitor cache?',
     })
@@ -93,6 +94,7 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
   test('memory_forget by chunk hash redacts the entry and search stops returning it', async () => {
     await live.toolText('memory_write', { content: '- the agent tuned the warp drive injectors to seven hertz' })
     await live.fire('session_shutdown')
+    await live.restartSession()
 
     // A write reindexes the day file and re-chunks it, so hashes from before the write are stale;
     // forget must act on a hash from the current index state.
@@ -108,6 +110,7 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
     ok(text.includes(BULLETS), `forget did not echo the removed entry:\n${text}`)
     ok(dailyFile && readFileSync(dailyFile, 'utf8').includes('warp drive'), 'the other entry survived in the day file')
     await live.fire('session_shutdown')
+    await live.restartSession()
 
     const search = await live.toolText('memory_search', {
       query: 'which vector database did we settle on for the flux-capacitor cache?',
@@ -125,6 +128,7 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
     ok(text.includes('warp drive'), `forget did not echo the removed entry:\n${text}`)
     ok(!existsSync(dailyFile), 'the emptied day file was deleted')
     await live.fire('session_shutdown')
+    await live.restartSession()
 
     const search = await live.toolText('memory_search', { query: 'warp drive injector tuning' })
     match(search, /No memories found/)
