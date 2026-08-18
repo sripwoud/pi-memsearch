@@ -7,12 +7,20 @@ test('extension entry point default-exports a factory', () => {
   equal(typeof memsearch, 'function')
 })
 
-test('registers the six memory tools', () => {
+test('registers the seven memory tools', () => {
   const { tools } = setupExtension([])
 
   deepEqual(
     [...tools.keys()].sort(),
-    ['memory_compact', 'memory_expand', 'memory_forget', 'memory_search', 'memory_status', 'memory_write'],
+    [
+      'memory_compact',
+      'memory_expand',
+      'memory_forget',
+      'memory_search',
+      'memory_status',
+      'memory_transcript',
+      'memory_write',
+    ],
   )
 })
 

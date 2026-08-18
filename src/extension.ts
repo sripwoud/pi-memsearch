@@ -24,6 +24,7 @@ import {
 import { deriveCollection, type ProjectScope, resolveProjectScope, resolveRepositoryDir } from './scope.ts'
 import { type SpawnSidecarFn, spawnSidecarProcess } from './sidecar.ts'
 import { buildSnapshot } from './snapshot.ts'
+import { DEFAULT_CONTEXT, DEFAULT_LIMIT, renderTranscript } from './transcript.ts'
 
 export interface MemsearchDeps {
   complete: Complete
@@ -211,6 +212,49 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         ),
       }),
       promptSnippet: 'Expand a memory_search chunk into its full section',
+    })
+
+    pi.registerTool({
+      description:
+        "Read the origin session transcript behind a memory (L3 recall). Pass the session anchor's transcript path; pass its entry id as turn to window the conversation around that exchange, or omit turn for the tail of the live branch. Pure file read: works when the memory backend is unavailable.",
+      execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => {
+        if (!existsSync(params.transcript_path)) throw new Error(`no transcript file at ${params.transcript_path}`)
+        let raw: string
+        try {
+          raw = readFileSync(params.transcript_path, 'utf8')
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error)
+          throw new Error(`could not read transcript at ${params.transcript_path}: ${reason}`)
+        }
+        const text = renderTranscript(raw, {
+          context: params.context ?? DEFAULT_CONTEXT,
+          limit: params.limit ?? DEFAULT_LIMIT,
+          path: params.transcript_path,
+          ...(params.turn === undefined ? {} : { turn: params.turn }),
+        })
+        return { content: [{ text, type: 'text' as const }], details: { transcript: params.transcript_path } }
+      },
+      label: 'Memory transcript',
+      name: 'memory_transcript',
+      parameters: Type.Object({
+        context: Type.Optional(
+          Type.Integer({
+            description: `Turns rendered before and after the target (default ${DEFAULT_CONTEXT})`,
+            minimum: 0,
+          }),
+        ),
+        limit: Type.Optional(
+          Type.Integer({
+            description: `Tail turns rendered when no turn is given (default ${DEFAULT_LIMIT})`,
+            minimum: 1,
+          }),
+        ),
+        transcript_path: Type.String({ description: 'Transcript path from a session anchor' }),
+        turn: Type.Optional(
+          Type.String({ description: 'Entry id from a session anchor; a unique prefix is accepted' }),
+        ),
+      }),
+      promptSnippet: 'Read the origin transcript behind a memory at its session anchor',
     })
 
     const redact = (file: string, remaining: string, removed: string, cwd: string, kind: 'compact block' | 'entry') => {
