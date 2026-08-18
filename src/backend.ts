@@ -8,14 +8,17 @@ import {
   parseExpandedSection,
   parseIndexedChunks,
   parseSearchHits,
+  parseSkillsStatus,
   parseVersion,
   type SearchHit,
+  type SkillsStatus,
 } from './contract.ts'
 import type { ExecFn, ExecResult } from './exec.ts'
 
 const VERSION_TIMEOUT_MS = 60_000
 const CONFIG_TIMEOUT_MS = 10_000
 const STATS_TIMEOUT_MS = 10_000
+const SKILLS_STATUS_TIMEOUT_MS = 10_000
 const EXPAND_TIMEOUT_MS = 10_000
 const INDEX_TIMEOUT_MS = 120_000
 const DEFAULT_SEARCH_TIMEOUT_MS = 30_000
@@ -69,6 +72,7 @@ export interface Backend {
   index(path: string, collection: string, options?: CommandOptions): Promise<number>
   probe(options?: CommandOptions): Promise<Availability>
   search(query: string, collection: string, options?: CommandOptions & { topK?: number }): Promise<SearchHit[]>
+  skillsStatus(options?: CommandOptions): Promise<SkillsStatus>
   stats(collection: string, options?: CommandOptions): Promise<number | 'missing'>
 }
 
@@ -231,6 +235,11 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseIndexedChunks(result.stdout)
   }
 
+  async function skillsStatus(options: CommandOptions = {}): Promise<SkillsStatus> {
+    const result = await runCommand('skills status', ['skills', 'status', '-j'], SKILLS_STATUS_TIMEOUT_MS, options)
+    return parseSkillsStatus(result.stdout)
+  }
+
   async function stats(collection: string, options: CommandOptions = {}): Promise<number | 'missing'> {
     await ensureAvailable(options)
     const result = await invoke('stats', ['stats', '-c', collection], STATS_TIMEOUT_MS, options)
@@ -241,7 +250,7 @@ export function createBackend(deps: BackendDeps): Backend {
     return parseChunkCount(result.stdout)
   }
 
-  return { compact, configGet, configSet, expand, index, probe, search, stats }
+  return { compact, configGet, configSet, expand, index, probe, search, skillsStatus, stats }
 }
 
 function resolveTimeoutMs(env: NodeJS.ProcessEnv, key: string, fallback: number): number {

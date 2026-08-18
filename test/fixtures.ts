@@ -96,6 +96,32 @@ export const EXPAND_JSON = JSON.stringify(EXPAND_RESULT)
 
 export const VERSION_STDOUT = 'memsearch, version 0.4.17\n'
 
+export const SKILLS_STATUS_PENDING_STDOUT = JSON.stringify(
+  {
+    candidate_count: 3,
+    new_count: 1,
+    pending_count: 2,
+    pending_names: ['release-flow', 'triage-labels'],
+    root: '/home/user/project/.memsearch/skill-candidates',
+    updated_count: 1,
+  },
+  null,
+  2,
+)
+
+export const SKILLS_STATUS_NONE_STDOUT = JSON.stringify(
+  {
+    candidate_count: 1,
+    new_count: 0,
+    pending_count: 0,
+    pending_names: [],
+    root: '/home/user/project/.memsearch/skill-candidates',
+    updated_count: 0,
+  },
+  null,
+  2,
+)
+
 export const STATS_STDOUT = 'Total indexed chunks: 42\n'
 
 export const INDEXED_STDOUT = 'Indexed 3 chunks.\n'
@@ -134,6 +160,10 @@ export const USAGE_ERROR_STDERR =
 
 export function eaccesError(): Error {
   return Object.assign(new Error('spawn uvx EACCES'), { code: 'EACCES' })
+}
+
+export function abortError(): Error {
+  return Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
 }
 
 export function okResult(stdout: string): ExecResult {
