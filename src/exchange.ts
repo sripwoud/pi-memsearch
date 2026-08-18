@@ -33,6 +33,7 @@ function exchangeWindow(branch: SessionEntry[], afterEntryId: string | undefined
   return lastUser === -1 ? [] : branch.slice(lastUser)
 }
 
+// The type check doubles as the barrier keeping injected custom_message entries (auto-context) out of capture.
 function isMessageEntry(entry: SessionEntry): entry is SessionMessageEntry {
   return entry.type === 'message'
 }
