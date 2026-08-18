@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { pythonChildEnv } from './contract.ts'
 
 export interface ExecOptions {
   cwd?: string
@@ -19,6 +20,7 @@ export const execProcess: ExecFn = (command, args, options) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
+      env: pythonChildEnv(),
       killSignal: 'SIGTERM',
       signal: options.signal,
       stdio: ['ignore', 'pipe', 'pipe'],

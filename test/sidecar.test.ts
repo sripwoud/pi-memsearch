@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { test } from 'node:test'
 import { spawnSidecarProcess } from '../src/sidecar.ts'
+import { setEnvVar } from './harness.ts'
 
 const ECHO_SERVER = [
   'process.stdin.setEncoding("utf8")',
@@ -76,6 +77,40 @@ test('the child runs in the requested working directory', async () => {
   proc.onLine((line) => lines.push(line))
   await waitForExit(proc)
   deepEqual(lines, [cwd])
+})
+
+test('the sidecar sees PYTHONIOENCODING=utf-8 even when the parent carries a non-UTF-8 value', async () => {
+  const restore = setEnvVar('PYTHONIOENCODING', 'latin-1')
+  try {
+    const lines: string[] = []
+    const proc = spawnSidecarProcess(
+      process.execPath,
+      ['-e', 'process.stdout.write(process.env.PYTHONIOENCODING + "\\n")'],
+      { cwd: tmpdir() },
+    )
+    proc.onLine((line) => lines.push(line))
+    await waitForExit(proc)
+    deepEqual(lines, ['utf-8'])
+  } finally {
+    restore()
+  }
+})
+
+test('the sidecar keeps the inherited environment alongside the encoding override', async () => {
+  const restore = setEnvVar('PI_MEMSEARCH_TEST_CANARY', 'inherited')
+  try {
+    const lines: string[] = []
+    const proc = spawnSidecarProcess(
+      process.execPath,
+      ['-e', 'process.stdout.write(process.env.PI_MEMSEARCH_TEST_CANARY + "\\n")'],
+      { cwd: tmpdir() },
+    )
+    proc.onLine((line) => lines.push(line))
+    await waitForExit(proc)
+    deepEqual(lines, ['inherited'])
+  } finally {
+    restore()
+  }
 })
 
 test('send after exit is a safe no-op', async () => {

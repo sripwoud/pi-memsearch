@@ -282,6 +282,15 @@ export function createProjectRoot(prefix: string): string {
   return root
 }
 
+export function setEnvVar(name: string, value: string): () => void {
+  const prior = process.env[name]
+  process.env[name] = value
+  return () => {
+    if (prior === undefined) delete process.env[name]
+    else process.env[name] = prior
+  }
+}
+
 export function setupExtension(steps: FakeExecStep[], options: SetupOptions = {}) {
   const root = createProjectRoot(options.prefix ?? 'pi-memsearch-')
   const home = seedHome(root, { globalConfig: options.globalConfig ?? true, onnxModel: options.onnxModel ?? true })
