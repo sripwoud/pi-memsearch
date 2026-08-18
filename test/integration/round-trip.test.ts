@@ -4,7 +4,7 @@ import { basename, join } from 'node:path'
 import { describe, test } from 'node:test'
 import { MEMSEARCH_SPEC } from '../../src/contract.ts'
 import { readIndexState } from '../../src/index-state.ts'
-import { assistantEntry, TEST_SESSION, userEntry } from '../harness.ts'
+import { assistantEntry, setEnvVar, TEST_SESSION, userEntry } from '../harness.ts'
 import { setupLive, SKIP_UNLESS_GATED } from './live.ts'
 
 const BULLETS = [
@@ -60,6 +60,7 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
   })
 
   test('search recalls the captured memory from a paraphrased query', async () => {
+    await live.restartSession()
     const text = await live.toolText('memory_search', {
       query: 'which vector database did we settle on for the flux-capacitor cache?',
     })
@@ -93,6 +94,7 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
   test('memory_forget by chunk hash redacts the entry and search stops returning it', async () => {
     await live.toolText('memory_write', { content: '- the agent tuned the warp drive injectors to seven hertz' })
     await live.fire('session_shutdown')
+    await live.restartSession()
 
     // A write reindexes the day file and re-chunks it, so hashes from before the write are stale;
     // forget must act on a hash from the current index state.
@@ -108,6 +110,7 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
     ok(text.includes(BULLETS), `forget did not echo the removed entry:\n${text}`)
     ok(dailyFile && readFileSync(dailyFile, 'utf8').includes('warp drive'), 'the other entry survived in the day file')
     await live.fire('session_shutdown')
+    await live.restartSession()
 
     const search = await live.toolText('memory_search', {
       query: 'which vector database did we settle on for the flux-capacitor cache?',
@@ -125,8 +128,27 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
     ok(text.includes('warp drive'), `forget did not echo the removed entry:\n${text}`)
     ok(!existsSync(dailyFile), 'the emptied day file was deleted')
     await live.fire('session_shutdown')
+    await live.restartSession()
 
     const search = await live.toolText('memory_search', { query: 'warp drive injector tuning' })
     match(search, /No memories found/)
+  })
+
+  test('a non-ASCII memory entry survives recall when the child stdout encoding is not UTF-8', async () => {
+    // PYTHONIOENCODING outranks locale coercion and UTF-8 mode in every Python, so an inherited
+    // latin-1 stands in for an explicitly non-UTF-8 locale deterministically. It must not be
+    // ascii: click treats an ascii stream as misconfigured and force-repairs it to UTF-8.
+    const restore = setEnvVar('PYTHONIOENCODING', 'latin-1')
+    try {
+      const bullet = '- the agent renamed the café tier to “élite” — shipped with a 🚀 emoji'
+      await live.toolText('memory_write', { content: bullet })
+      await live.fire('session_shutdown')
+      await live.restartSession()
+
+      const text = await live.toolText('memory_search', { query: 'what was the café tier renamed to?' })
+      ok(text.includes(bullet), `recall lost the non-ASCII entry:\n${text}`)
+    } finally {
+      restore()
+    }
   })
 })

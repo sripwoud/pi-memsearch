@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { pythonChildEnv } from './contract.ts'
 
 export interface SidecarSpawnOptions {
   cwd: string
@@ -15,7 +16,12 @@ export interface SidecarProcess {
 export type SpawnSidecarFn = (command: string, args: string[], options: SidecarSpawnOptions) => SidecarProcess
 
 export const spawnSidecarProcess: SpawnSidecarFn = (command, args, options) => {
-  const child = spawn(command, args, { cwd: options.cwd, killSignal: 'SIGTERM', stdio: ['pipe', 'pipe', 'ignore'] })
+  const child = spawn(command, args, {
+    cwd: options.cwd,
+    env: pythonChildEnv(),
+    killSignal: 'SIGTERM',
+    stdio: ['pipe', 'pipe', 'ignore'],
+  })
   const lineHandlers: ((line: string) => void)[] = []
   const exitHandlers: (() => void)[] = []
   let buffer = ''

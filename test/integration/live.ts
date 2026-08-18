@@ -26,6 +26,7 @@ export interface LiveHarness {
   home: string
   lockedOutAttempts(): number
   memoryDir: string
+  restartSession(): Promise<void>
   settle(): Promise<void>
   toolText(name: string, params: object): Promise<string>
 }
@@ -77,6 +78,13 @@ export function setupLive(options: { complete?: Complete } = {}): LiveHarness {
     home,
     lockedOutAttempts: () => lockedOut.length,
     memoryDir: join(root, '.memsearch', 'memory'),
+    // session_shutdown aborts the tool signal; a new session re-arms it, as in production.
+    // session_start also kicks off an immediate catch-up index, so a status call queues
+    // behind it as a barrier: no index child is still in flight when this returns.
+    async restartSession() {
+      await fire('session_start', {}, ctx)
+      await runTool(tools, 'memory_status', {}, ctx)
+    },
     async settle() {
       while (pending.length > 0) await Promise.all(pending.splice(0))
     },

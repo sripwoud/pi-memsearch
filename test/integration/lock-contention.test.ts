@@ -21,6 +21,7 @@ describe('lock contention against real memsearch', { skip: SKIP_UNLESS_GATED }, 
   })
 
   test('a search locked out by another process still returns memories', async () => {
+    await live.restartSession()
     const holder = await holdDataDirLock(live.dataDirLockPath)
     const search = live.toolText('memory_search', { query: 'what is the retry backoff for lock contention?' })
 

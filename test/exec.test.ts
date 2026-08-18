@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { execProcess } from '../src/exec.ts'
+import { setEnvVar } from './harness.ts'
 
 test('captures stdout, stderr and exit code', async () => {
   const result = await execProcess(
@@ -31,6 +32,28 @@ test('a timed-out process is terminated with SIGTERM', async () => {
   const result = await execProcess(process.execPath, ['-e', 'setTimeout(() => {}, 10_000)'], { timeoutMs: 200 })
   equal(result.exitCode, null)
   equal(result.signal, 'SIGTERM')
+})
+
+test('the child sees PYTHONIOENCODING=utf-8 even when the parent carries a non-UTF-8 value', async () => {
+  const restore = setEnvVar('PYTHONIOENCODING', 'latin-1')
+  try {
+    const result = await execProcess(process.execPath, ['-p', 'process.env.PYTHONIOENCODING'], { timeoutMs: 5000 })
+    equal(result.stdout.trim(), 'utf-8')
+  } finally {
+    restore()
+  }
+})
+
+test('the inherited environment is preserved alongside the encoding override', async () => {
+  const restore = setEnvVar('PI_MEMSEARCH_TEST_CANARY', 'inherited')
+  try {
+    const result = await execProcess(process.execPath, ['-p', 'process.env.PI_MEMSEARCH_TEST_CANARY'], {
+      timeoutMs: 5000,
+    })
+    equal(result.stdout.trim(), 'inherited')
+  } finally {
+    restore()
+  }
 })
 
 test('an abort signal rejects and terminates the process', async () => {

@@ -1,5 +1,13 @@
 export const MEMSEARCH_SPEC = 'memsearch[onnx]>=0.4.17,<0.5'
 
+// The pinned memsearch releases print non-ASCII output unescaped, and Python picks its pipe
+// encoding from the locale, so an explicitly non-UTF-8 locale fails any accented recall or
+// compaction. Force UTF-8 on child streams; drop once the MEMSEARCH_SPEC floor reaches a
+// release with the upstream fix.
+export function pythonChildEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, PYTHONIOENCODING: 'utf-8' }
+}
+
 const LOCK_PATTERNS = [
   /another process already has the database open/,
   /another process holds the lock/,
