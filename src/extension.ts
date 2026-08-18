@@ -6,7 +6,7 @@ import { AUTO_CONTEXT_ENV, type AutoContextStatus, createAutoContext } from './a
 import { type Backend, BackendUnavailableError, type CommandOptions, createBackend } from './backend.ts'
 import { type BootstrapState, createBootstrap, ONNX_DOWNLOAD_NOTICE } from './bootstrap.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
-import { type ExpandedSection, formatHitBlock, MEMSEARCH_SPEC, type SearchHit } from './contract.ts'
+import { type ExpandedSection, formatHitBlock, MEMSEARCH_SPEC, type SearchHit, type SkillsStatus } from './contract.ts'
 import { type CrossRepoResult, discoverProjects, resolveScanRoots, searchAcrossProjects } from './cross-repo.ts'
 import { type ExecFn, execProcess } from './exec.ts'
 import { type IndexState, readIndexState } from './index-state.ts'
@@ -134,6 +134,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           description: 'Memory entry: third-person markdown bullets, in the primary language of the conversation',
         }),
       }),
+      promptSnippet: 'Persist a memory entry to the shared project memory store',
     })
 
     pi.registerTool({
@@ -184,6 +185,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         ),
         top_k: Type.Optional(Type.Integer({ description: 'Number of chunks to return (default 5)', minimum: 1 })),
       }),
+      promptSnippet: 'Search project memory for past decisions, fixes and context',
     })
 
     pi.registerTool({
@@ -208,6 +210,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           }),
         ),
       }),
+      promptSnippet: 'Expand a memory_search chunk into its full section',
     })
 
     const redact = (file: string, remaining: string, removed: string, cwd: string, kind: 'compact block' | 'entry') => {
@@ -285,11 +288,12 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         date: Type.Optional(Type.String({ description: 'Daily memory file date (YYYY-MM-DD); pair with time' })),
         time: Type.Optional(Type.String({ description: 'Entry heading time (HH:MM); pair with date' })),
       }),
+      promptSnippet: 'Redact a memory entry from the project memory store',
     })
 
     pi.registerTool({
       description:
-        'Diagnose the shared project memory backend: uv/memsearch availability and version, project scope, collection, and indexed chunk count.',
+        'Diagnose the shared project memory backend: uv/memsearch availability and version, project scope, collection, indexed chunk count, and skill candidates pending install.',
       execute: async (_toolCallId, _params, signal, onUpdate, ctx) => {
         const { collection, options, scope } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
         const availability = await backend.probe(options)
@@ -304,8 +308,10 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         lines.push(...describeIndexHealth(scope.memoryDir))
         const failure = indexer.lastFailure()
         if (failure !== undefined) lines.push(`last index run: failed (${failure})`)
-        if (availability.available)
+        if (availability.available) {
           lines.push(await describeChunkCount(backend, collection, options))
+          lines.push(...(await describeSkillCandidates(backend, options)))
+        }
         lines.push(...describeAutoContext(autoContext.status()))
 
         const text = lines.join('\n')
@@ -317,6 +323,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       label: 'Memory status',
       name: 'memory_status',
       parameters: Type.Object({}),
+      promptSnippet: 'Diagnose the memory backend (availability, scope, index health)',
     })
 
     pi.registerTool({
@@ -334,6 +341,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       label: 'Memory compact',
       name: 'memory_compact',
       parameters: Type.Object({}),
+      promptSnippet: 'Condense the project memory store with an LLM summary',
     })
 
     if (env['PI_MEMSEARCH_SNAPSHOT'] !== 'off') {
@@ -527,6 +535,25 @@ function describeIndexStatus(state: IndexState): string {
   if (state.status === 'error')
     return state.lastError === undefined ? 'index: error' : `index: error (${state.lastError})`
   return `index: ${state.status}`
+}
+
+async function describeSkillCandidates(backend: Backend, options: CommandOptions): Promise<string[]> {
+  let status: SkillsStatus
+  try {
+    status = await backend.skillsStatus(options)
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error
+    return []
+  }
+  if (status.pending_count === 0) return []
+  const parts = [
+    ...(status.new_count > 0 ? [`${status.new_count} new`] : []),
+    ...(status.updated_count > 0 ? [`${status.updated_count} updated`] : []),
+  ]
+  const breakdown = parts.length === 0 ? '' : ` (${parts.join(', ')})`
+  return [
+    `skill candidates: ${status.pending_count} pending install${breakdown} - review with the skill-drafting skill`,
+  ]
 }
 
 async function describeChunkCount(
