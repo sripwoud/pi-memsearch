@@ -45,10 +45,15 @@ export interface AutoContextMessage {
   display: false
 }
 
+export interface AutoContextDirs {
+  repositoryDir: string
+  scopeDir: string
+}
+
 export interface AutoContext {
   enabled: boolean
   onPrompt(prompt: string): Promise<{ message: AutoContextMessage } | undefined>
-  start(scopeDir: string): void
+  start(dirs: AutoContextDirs): void
   status(): AutoContextStatus
   stop(): void
 }
@@ -81,7 +86,7 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
   const enabled = deps.env[AUTO_CONTEXT_ENV] === 'on'
   let counters = freshCounters()
   let state: SidecarState = 'warming'
-  let scopeDir: string | undefined
+  let repositoryDir: string | undefined
   let collection = ''
   let session: Session | undefined
   let respawns = 0
@@ -165,10 +170,10 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
   async function onPrompt(prompt: string): Promise<{ message: AutoContextMessage } | undefined> {
     if (!enabled) return undefined
     counters.prompts++
-    if (state === 'gave-up' || scopeDir === undefined) return undefined
+    if (state === 'gave-up' || repositoryDir === undefined) return undefined
     if (state === 'crashed') {
       respawns++
-      spawn(scopeDir)
+      spawn(repositoryDir)
     }
     const current = session
     if (!current) return undefined
@@ -214,10 +219,10 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
   return {
     enabled,
     onPrompt,
-    start(dir) {
+    start(dirs) {
       if (!enabled) return
-      scopeDir = dir
-      collection = deriveCollection(dir)
+      repositoryDir = dirs.repositoryDir
+      collection = deriveCollection(dirs.scopeDir)
       counters = freshCounters()
       respawns = 0
       consecutiveTimeouts = 0
@@ -226,7 +231,7 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
         session.stopped = true
         session.proc.end()
       }
-      spawn(dir)
+      spawn(dirs.repositoryDir)
     },
     status() {
       return {
