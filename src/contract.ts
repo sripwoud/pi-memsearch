@@ -53,6 +53,21 @@ export function parseCompactSummary(stdout: string): string | undefined {
   return summary
 }
 
+export interface SkillsStatus {
+  new_count: number
+  pending_count: number
+  updated_count: number
+}
+
+export function parseSkillsStatus(stdout: string): SkillsStatus {
+  const record = asRecord(parseJson(stdout, 'skills status'), 'skills status', 'summary')
+  return {
+    new_count: requireNumber(record, 'new_count', 'skills status', 'summary'),
+    pending_count: requireNumber(record, 'pending_count', 'skills status', 'summary'),
+    updated_count: requireNumber(record, 'updated_count', 'skills status', 'summary'),
+  }
+}
+
 export interface SearchHit {
   chunk_hash: string
   content: string
