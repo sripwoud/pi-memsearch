@@ -24,11 +24,9 @@ When a hit looks relevant but truncated, call `memory_expand` with its `chunk_ha
 
 ## L3 — read the origin transcript (last resort)
 
-Only when the expanded section still leaves the question open and carries a session anchor. pi transcripts are line-delimited JSON: a session header line first, then one entry object per line. Entries form a tree via `id` (8-char hex) and `parentId`; the conversation as it happened is the parent-chain walk from an entry back to the root — raw line order interleaves abandoned branches.
+Only when the expanded section still leaves the question open and carries a session anchor. Call `memory_transcript` with the anchor's transcript path as `transcript_path` and its entry id as `turn`: it renders the conversation around that exchange (`context` turns each side, default 3) and follows the branch the memory anchors to, even when the session forked later. Omit `turn` to read the tail of the session's live branch (`limit` turns, default 20). It is a pure file read, so it works even when the memory backend is unavailable.
 
-1. Find the line whose `"id"` equals the anchor's entry id (grep the file; never read it whole).
-2. Walk `parentId` links backwards from that entry for the conversation that led to it.
-3. For what followed, scan later lines whose `parentId` chains pass through the anchored entry — the active branch is the parent-chain walk from the leaf, so descendants continue the exchange.
+Fallback, only if the tool is missing: transcripts are line-delimited JSON whose entries form a tree via `id` (8-char hex) and `parentId` — grep for the anchor's entry id and walk `parentId` links back for the conversation that led to it.
 
 ## Answering
 

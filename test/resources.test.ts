@@ -39,7 +39,7 @@ test('recall skill instructs the layered tool workflow', () => {
   const { body } = parseResource('../skills/recall/SKILL.md')
   match(body, /memory_search/)
   match(body, /memory_expand/)
-  match(body, /transcript/)
+  match(body, /memory_transcript/)
 })
 
 test('skill-drafting skill frontmatter satisfies the agent-skills spec', () => {

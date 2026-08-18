@@ -40,7 +40,7 @@ Uninstall with `pi remove npm:pi-memsearch`. The memory markdown under `.memsear
 | Capture          | `agent_settled` hook                     | Distills every content-bearing exchange into the daily memory file, in the background                  |
 | Deliberate write | `memory_write` tool                      | Persists a memory immediately, on request                                                              |
 | Indexing         | `session_start` / write / shutdown       | Catch-up index, debounced index 5 s after a write, final index at shutdown                             |
-| Recall           | `/recall`, recall skill, two tools       | `memory_search` (chunks) → `memory_expand` (section) → origin transcript                               |
+| Recall           | `/recall`, recall skill, three tools     | `memory_search` (chunks) → `memory_expand` (section) → `memory_transcript` (origin transcript)         |
 | Skill drafting   | `skill-drafting` skill                   | Turns remembered work into skill candidates in memsearch's git-tracked store; installs only on request |
 | Redaction        | `memory_forget` tool                     | Removes one entry from the day file and, via reindex, the collection; no copy kept                     |
 | Maintenance      | `memory_compact` tool                    | Memory compaction on request: an LLM condenses the store into today's file                             |
@@ -76,7 +76,7 @@ After each exchange settles, two hard gates apply — the assistant produced tex
 
 1. `memory_search` — top-k scored chunks (default 5). Scores are normalized RRF ranks over hybrid dense + BM25 retrieval, not cosine similarity.
 2. `memory_expand` — the full section behind a chunk hash, plus its anchor. Loads no embedder, so it is cheap.
-3. The origin transcript at the anchor's path, read directly — last resort.
+3. `memory_transcript` — the turns around the anchored entry, following the branch the memory anchors to even past a later fork. A pure file read — last resort.
 
 ```text
 you ▸ /recall how did we fix the flaky redis test?
@@ -111,14 +111,15 @@ Milvus Lite allows a single client at a time, so every memsearch invocation goes
 
 ## Tools
 
-| Tool             | Layer | Purpose                                                                                                                 |
-| ---------------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
-| `memory_write`   | —     | Persist a memory now: timestamped, anchored, appended to today's file                                                   |
-| `memory_search`  | L1    | Top-k scored chunks for a query; `scope: "all"` widens to cross-repo recall                                             |
-| `memory_expand`  | L2    | Full section for a chunk hash, with its session anchor; `project` routes to a cross-repo hit's origin                   |
-| `memory_forget`  | —     | Redact one entry or compact block from store and collection; the tool result is the only record                         |
-| `memory_compact` | —     | Memory compaction on explicit request; returns memsearch's markdown summary                                             |
-| `memory_status`  | —     | Doctor: uv/memsearch presence and version, scope, collection, index state, chunk count, auto-context state and counters |
+| Tool                | Layer | Purpose                                                                                                                 |
+| ------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
+| `memory_write`      | —     | Persist a memory now: timestamped, anchored, appended to today's file                                                   |
+| `memory_search`     | L1    | Top-k scored chunks for a query; `scope: "all"` widens to cross-repo recall                                             |
+| `memory_expand`     | L2    | Full section for a chunk hash, with its session anchor; `project` routes to a cross-repo hit's origin                   |
+| `memory_transcript` | L3    | Turns around an anchored entry in the origin transcript, on the branch the memory anchors to; pure file read            |
+| `memory_forget`     | —     | Redact one entry or compact block from store and collection; the tool result is the only record                         |
+| `memory_compact`    | —     | Memory compaction on explicit request; returns memsearch's markdown summary                                             |
+| `memory_status`     | —     | Doctor: uv/memsearch presence and version, scope, collection, index state, chunk count, auto-context state and counters |
 
 ## Configuration
 
@@ -141,6 +142,7 @@ A missing `uv` or memsearch degrades rather than breaks:
 
 - Capture and `memory_write` keep appending to the daily file, and the snapshot keeps reading it.
 - `memory_search`, `memory_expand` and `memory_compact` return install instructions instead of an error.
+- `memory_transcript` keeps working: L3 recall is a pure file read that never touches the backend.
 - Availability is re-probed with a short negative cache, so installing `uv` mid-session is picked up without a restart.
 - Once the backend is back, the next index makes everything written in the meantime searchable.
 
