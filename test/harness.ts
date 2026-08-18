@@ -3,6 +3,7 @@ import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } fro
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { AUTO_CONTEXT_MESSAGE_TYPE } from '../src/auto-context.ts'
 import type { Complete } from '../src/capture.ts'
 import type { ModelCatalog } from '../src/distillation-model.ts'
 import type { ExecFn, ExecOptions, ExecResult } from '../src/exec.ts'
@@ -81,6 +82,18 @@ export function fakeCatalog(models: Model<Api>[]): ModelCatalog {
 export function userEntry(id: string, text: string): SessionEntry {
   const message: UserMessage = { content: text, role: 'user', timestamp: 0 }
   return { id, message, parentId: null, timestamp: '2026-08-13T22:40:00.000Z', type: 'message' }
+}
+
+export function customMessageEntry(id: string, content: string): SessionEntry {
+  return {
+    content,
+    customType: AUTO_CONTEXT_MESSAGE_TYPE,
+    display: false,
+    id,
+    parentId: null,
+    timestamp: '2026-08-13T22:40:15.000Z',
+    type: 'custom_message',
+  }
 }
 
 export function assistantEntry(id: string, text: string | undefined, stopReason: StopReason = 'stop'): SessionEntry {

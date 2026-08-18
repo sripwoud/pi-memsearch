@@ -12,6 +12,7 @@ import {
   createFakeContext,
   createFakeExec,
   createFakePi,
+  customMessageEntry,
   fakeModel,
   type FakeSession,
   seedHome,
@@ -217,6 +218,26 @@ test('default model is the cheapest available one from the session provider', as
   await settle()
 
   equal(requests[0]?.model.id, 'small')
+})
+
+test('injected auto-context custom_message entries never reach distillation', async () => {
+  const { requests, settle } = setup({
+    branch: [
+      userEntry('u1', 'fix the login bug'),
+      customMessageEntry('c1', 'Project memory (auto-context): recalled chunk about the login bug'),
+      assistantEntry('a1', 'fixed it by escaping the query'),
+    ],
+  })
+
+  await settle()
+
+  equal(requests.length, 1)
+  const request = requests[0]
+  ok(request)
+  ok(!/auto-context/.test(request.transcript))
+  ok(!/recalled chunk/.test(request.transcript))
+  match(request.transcript, /fix the login bug/)
+  match(request.transcript, /fixed it by escaping the query/)
 })
 
 test('the same settled exchange is never captured twice', async () => {
