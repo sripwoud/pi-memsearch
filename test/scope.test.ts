@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { deriveCollection, resolveProjectScope } from '../src/scope.ts'
+import { deriveCollection, resolveProjectScope, resolveRepositoryDir } from '../src/scope.ts'
 
 // Expected values generated with memsearch's plugins/claude-code/scripts/derive-collection.sh
 const VECTORS: [path: string, collection: string][] = [
@@ -59,4 +59,17 @@ test('scope falls back to the base dir outside any git repo', () => {
   const scope = resolveProjectScope({ baseDir: base, env: {} })
   equal(scope.dir, base)
   equal(scope.memoryDir, join(base, '.memsearch', 'memory'))
+})
+
+test('repository dir is the git root of a nested directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'scope-'))
+  mkdirSync(join(root, '.git'))
+  const nested = join(root, 'packages', 'core')
+  mkdirSync(nested, { recursive: true })
+  equal(resolveRepositoryDir(nested), root)
+})
+
+test('repository dir falls back to the directory itself outside any git repo', () => {
+  const base = mkdtempSync(join(tmpdir(), 'scope-'))
+  equal(resolveRepositoryDir(base), base)
 })

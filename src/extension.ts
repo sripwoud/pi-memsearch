@@ -21,7 +21,7 @@ import {
   removeCompactBlock,
   removeEntry,
 } from './redaction.ts'
-import { deriveCollection, type ProjectScope, resolveProjectScope } from './scope.ts'
+import { deriveCollection, type ProjectScope, resolveProjectScope, resolveRepositoryDir } from './scope.ts'
 import { type SpawnSidecarFn, spawnSidecarProcess } from './sidecar.ts'
 import { buildSnapshot } from './snapshot.ts'
 
@@ -46,7 +46,10 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
   const spawnSidecar = deps.spawnSidecar ?? spawnSidecarProcess
 
   return (pi) => {
-    const backend = createBackend({ env, exec, now, sleep })
+    let repositoryDir: string | undefined
+    const execAtRepository: ExecFn = (command, args, options) =>
+      exec(command, args, repositoryDir === undefined ? options : { ...options, cwd: repositoryDir })
+    const backend = createBackend({ env, exec: execAtRepository, now, sleep })
     const indexer = createIndexTriggers({ backend, env, sleep })
     let captureAbort = new AbortController()
     let toolAbort = new AbortController()
@@ -68,6 +71,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
 
     pi.on('session_start', (_event, ctx) => {
       shutdownEpoch++
+      repositoryDir = resolveRepositoryDir(ctx.cwd)
       captureAbort = new AbortController()
       toolAbort = new AbortController()
       indexer.catchUp(ctx.cwd)
@@ -358,7 +362,10 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
 
     if (autoContext.enabled) {
       pi.on('session_start', (_event, ctx) => {
-        autoContext.start(resolveProjectScope({ baseDir: ctx.cwd, env }).dir)
+        autoContext.start({
+          repositoryDir: resolveRepositoryDir(ctx.cwd),
+          scopeDir: resolveProjectScope({ baseDir: ctx.cwd, env }).dir,
+        })
       })
       pi.on('session_shutdown', () => {
         autoContext.stop()

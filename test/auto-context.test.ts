@@ -6,12 +6,14 @@ import { MEMSEARCH_SPEC, type SearchHit } from '../src/contract.ts'
 import { deriveCollection } from '../src/scope.ts'
 import { okResult, SEARCH_HITS, STATS_STDOUT, VERSION_STDOUT } from './fixtures.ts'
 import {
+  createFakeContext,
   type FakeExecStep,
   type FakeSidecarPlan,
   findInjectedMessage,
   type InjectedMessage,
   setupExtension,
   type SetupOptions,
+  TEST_SESSION,
 } from './harness.ts'
 
 const AUTO_ON = { PI_MEMSEARCH_AUTO_CONTEXT: 'on' }
@@ -62,6 +64,27 @@ test('spawns the sidecar eagerly at session start via uv with the pinned spec', 
   ok(script.endsWith('sidecar.py'), `expected the sidecar script, got ${script}`)
   ok(existsSync(script), 'the spawned script ships with the package')
   equal(spawn?.options.cwd, harness.root)
+})
+
+test('the sidecar runs at the git root when the session starts in a subdirectory', async () => {
+  const harness = setup({ env: AUTO_ON, sidecarPlans: [injectingPlan] })
+  const nested = join(harness.root, 'packages', 'core')
+  mkdirSync(nested, { recursive: true })
+  const ctx = createFakeContext({ cwd: nested, session: TEST_SESSION })
+
+  await harness.fire('session_start', {}, ctx)
+
+  equal(harness.spawns[0]?.options.cwd, harness.root)
+})
+
+test('MEMSEARCH_DIR moves the collection but the sidecar still runs at the repository', async () => {
+  const harness = setup({ env: { ...AUTO_ON, MEMSEARCH_DIR: '/shared/memsearch' }, sidecarPlans: [injectingPlan] })
+
+  await harness.fire('session_start', {}, harness.ctx)
+  await prompt(harness, 'what cache did we pick?')
+
+  equal(harness.spawns[0]?.options.cwd, harness.root)
+  equal(harness.sidecars[0]?.requests[0]?.['collection'], deriveCollection('/shared/memsearch'))
 })
 
 test('injects an invisible custom message with the top chunks', async () => {

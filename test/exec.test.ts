@@ -1,4 +1,7 @@
 import { equal, rejects } from 'node:assert/strict'
+import { mkdtempSync, realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { execProcess } from '../src/exec.ts'
 
@@ -12,6 +15,12 @@ test('captures stdout, stderr and exit code', async () => {
   equal(result.stderr, 'err')
   equal(result.exitCode, 3)
   equal(result.signal, null)
+})
+
+test('runs the child in the given working directory', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'exec-cwd-'))
+  const result = await execProcess(process.execPath, ['-p', 'process.cwd()'], { cwd: dir, timeoutMs: 5000 })
+  equal(result.stdout.trim(), realpathSync(dir))
 })
 
 test('a missing binary rejects with ENOENT', async () => {

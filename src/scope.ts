@@ -18,8 +18,13 @@ export function resolveProjectScope({ baseDir, env = process.env }: ScopeOptions
     const dir = resolve(baseDir, override)
     return { dir, memoryDir: join(dir, 'memory') }
   }
-  const dir = findGitRoot(resolve(baseDir)) ?? resolve(baseDir)
+  const dir = resolveRepositoryDir(baseDir)
   return { dir, memoryDir: join(dir, '.memsearch', 'memory') }
+}
+
+export function resolveRepositoryDir(baseDir: string): string {
+  const dir = resolve(baseDir)
+  return findGitRoot(dir) ?? dir
 }
 
 function findGitRoot(start: string): string | undefined {

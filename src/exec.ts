@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 
 export interface ExecOptions {
+  cwd?: string
   signal?: AbortSignal
   timeoutMs: number
 }
@@ -17,6 +18,7 @@ export type ExecFn = (command: string, args: string[], options: ExecOptions) => 
 export const execProcess: ExecFn = (command, args, options) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
+      cwd: options.cwd,
       killSignal: 'SIGTERM',
       signal: options.signal,
       stdio: ['ignore', 'pipe', 'pipe'],
