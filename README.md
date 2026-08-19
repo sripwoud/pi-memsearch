@@ -7,14 +7,41 @@
 
 </div>
 
-Long-term memory for [pi](https://pi.dev), backed by [memsearch](https://zilliztech.github.io/memsearch/): pi writes to and recalls from the same per-project memory store that Claude Code, Codex, OpenClaw and OpenCode already share.
+pi ships no memory by design — "primitives, not features". This package gives it long-term memory through [memsearch](https://zilliztech.github.io/memsearch/), the same per-project memory store Claude Code, Codex, OpenClaw and OpenCode already write to.
 
-## Why
+- **Recall in the phrasing you use weeks later**: **32/35** strong hits vs **26/35** for `pi-memory`'s qmd backend, over 35 queries against an identical 223-file corpus ([benchmark](docs/research/memsearch-vs-pi-memory-benchmark.md)).
+- **Cross-agent**: pi recalls what Claude Code learned yesterday in the same repo, and vice versa.
+- **Plain markdown** under `.memsearch/`, yours to commit or gitignore.
 
-pi ships no built-in memory by design ("primitives, not features"). The existing community option, `pi-memory`, delegates search to [qmd](https://github.com/tobilu/qmd) and keeps its index user-global. Two reasons for a memsearch alternative:
+One prerequisite: [uv](https://docs.astral.sh/uv/). Then `pi install npm:pi-memsearch`.
 
-1. **Recall accuracy.** Head-to-head benchmark (2026-08-13, 35 queries over an identical corpus of 223 markdown files): memsearch **32/35** strong hits vs **26/35** for qmd's best mode. They tie on short keyword queries; memsearch wins on paraphrased and natural-question recall — the phrasing you actually use when asking "how did we fix X?" weeks later. Full report: [`docs/research/memsearch-vs-pi-memory-benchmark.md`](docs/research/memsearch-vs-pi-memory-benchmark.md).
-2. **Cross-agent memory.** memsearch already integrates Claude Code, OpenClaw, OpenCode and Codex CLI, all sharing one markdown format and one collection-name derivation. This package joins pi to that mesh: pi recalls what Claude Code learned yesterday in the same repo, and vice versa.
+Nothing is asked of it — the memory writes itself, and answers weeks later:
+
+```text
+# .memsearch/memory/2026-08-13.md  ← written by the session, unprompted
+### 22:41
+- the user and the agent moved the hot cache to Redis with 5 minute TTLs
+
+# a new session, three weeks on
+you ▸ /recall how did we fix the flaky redis test?
+pi  ▸ memory_search → 5 chunks; top: 2026-08-13 "moved the hot cache to Redis with 5 minute TTLs" (0.81)
+      memory_expand → the full "### 22:41" section, with its session anchor
+      → answered at layer 2; the origin transcript was never opened
+```
+
+## Why memsearch, not `pi-memory`
+
+`pi-memory`, the existing community option, delegates search to [qmd](https://github.com/tobilu/qmd) and keeps its store user-global (`~/.pi/agent/memory`).
+
+|                                     | pi-memsearch | `pi-memory` |
+| ----------------------------------- | ------------ | ----------- |
+| Search backend                      | memsearch    | qmd         |
+| Strong hits, 35 queries / 223 files | **32/35**    | 26/35       |
+| Store scope                         | per git root | user-global |
+
+They tie on short keyword queries; memsearch wins on paraphrased and natural-question recall — the phrasing you use when asking "how did we fix X?" weeks later. Method and per-query results: [`docs/research/memsearch-vs-pi-memory-benchmark.md`](docs/research/memsearch-vs-pi-memory-benchmark.md).
+
+memsearch already integrates Claude Code, OpenClaw, OpenCode and Codex CLI, all sharing one markdown format and one collection-name derivation. This package joins pi to that mesh.
 
 ## Install
 
@@ -42,19 +69,20 @@ Uninstall with `pi remove npm:pi-memsearch`. The memory markdown under `.memsear
 | Indexing         | `session_start` / write / shutdown       | Catch-up index, debounced index 5 s after a write, final index at shutdown                             |
 | Recall           | `/recall`, recall skill, three tools     | `memory_search` (chunks) → `memory_expand` (section) → `memory_transcript` (origin transcript)         |
 | Skill drafting   | `skill-drafting` skill                   | Turns remembered work into skill candidates in memsearch's git-tracked store; installs only on request |
-| Redaction        | `memory_forget` tool                     | Removes one entry from the day file and, via reindex, the collection; no copy kept                     |
-| Maintenance      | `memory_compact` tool                    | Memory compaction on request: an LLM condenses the store into today's file                             |
+| Redaction        | `memory_forget` tool                     | Removes one entry from the daily memory file and, via reindex, the collection; no copy kept            |
+| Maintenance      | `memory_compact` tool                    | Memory compaction on request: an LLM condenses the store into today's daily memory file                |
 | Stable snapshot  | `before_agent_start` hook                | Recent memory appended to the system prompt, byte-identical between checkpoints                        |
 | Auto-context     | `before_agent_start` hook + warm sidecar | Opt-in: top memory chunks injected per prompt within a 300 ms budget                                   |
 | Diagnostics      | `memory_status` tool                     | One-call health report — see [Tools](#tools)                                                           |
 
 ### Memory store
 
-Markdown is the source of truth; the vector index is derived and rebuildable at any time.
+Markdown is the source of truth; the collection is derived and rebuildable at any time.
 
 - **Location**: `<project>/.memsearch/memory/YYYY-MM-DD.md`, one file per calendar day, appended to by every agent in the mesh.
-- **Git**: commit `.memsearch/` to share memory with collaborators, or gitignore it to keep it personal — the vector index lives in `~/.memsearch/milvus.db` either way, so the choice costs nothing.
+- **Git**: commit `.memsearch/` to share memory with collaborators, or gitignore it to keep it personal — the collection lives in `~/.memsearch/milvus.db` either way, so the choice costs nothing.
 - **Project scope**: `$MEMSEARCH_DIR`, else the git root, else the working directory — memsearch's own resolution order.
+- **Repository directory**: every memsearch child process runs at the git root of the session's directory, else that directory — so a project `.memsearch.toml` layers as it would for a CLI run there. Coincides with the project scope unless `$MEMSEARCH_DIR` is set; even then only the collection follows the override.
 - **Collection**: `ms_<sanitized-basename>_<8 hex of sha256(abs path)>`, memsearch's derivation, so pi searches the same collection the other agents build.
 - **Entry shape**: `## Session HH:MM` once per session, `### HH:MM` per exchange, then a session anchor and third-person bullets:
 
@@ -64,34 +92,27 @@ Markdown is the source of truth; the vector index is derived and rebuildable at 
 - the user and the agent moved the hot cache to Redis with 5 minute TTLs
 ```
 
-The anchor is what makes the third recall layer possible: any memory can be traced back to the conversation that produced it.
+The session anchor is what makes L3 recall possible: any memory entry traces back to the conversation that produced it.
 
 ### Capture
 
-After each exchange settles, two hard gates apply — the assistant produced text, and the run was not aborted — and everything that passes is distilled. Distillation uses the cheapest model of the session's provider by default, so automatic memory does not inflate the bill; a failed or timed-out call writes a diagnostic marker with the anchor intact rather than dropping the exchange.
+After each exchange settles, two gates apply — the assistant produced text, and the run was not aborted — and everything that passes is distilled. Distillation uses the cheapest model of the session's provider by default, so automatic memory does not inflate the bill; a failed or timed-out call writes a diagnostic marker with the anchor intact rather than dropping the exchange.
 
 ### Recall
 
 `/recall <query>`, or the agent reaching for the auto-discoverable recall skill on its own, walks progressive disclosure and stops at the shallowest layer that answers:
 
 1. `memory_search` — top-k scored chunks (default 5). Scores are normalized RRF ranks over hybrid dense + BM25 retrieval, not cosine similarity.
-2. `memory_expand` — the full section behind a chunk hash, plus its anchor. Loads no embedder, so it is cheap.
-3. `memory_transcript` — the turns around the anchored entry, following the branch the memory anchors to even past a later fork. A pure file read — last resort.
+2. `memory_expand` — the full section behind a chunk hash, plus its session anchor. Loads no embedder, so it is cheap.
+3. `memory_transcript` — the turns around the anchored entry, following the branch the memory anchors to even past a later fork. A pure file read — last resort ([ADR 0006](docs/adr/0006-l3-transcript-tool.md)).
 
-```text
-you ▸ /recall how did we fix the flaky redis test?
-pi  ▸ memory_search → 5 chunks; top: 2026-08-13 "moved the hot cache to Redis with 5 minute TTLs" (0.81)
-      memory_expand → the full "### 22:41" section, with its session anchor
-      → answered at layer 2; the origin transcript was never opened
-```
+An empty result says so — no invented hits.
 
-An empty result says so plainly instead of inviting invention.
-
-When the conversation happened in _another_ repo, cross-repo recall widens the search: `/recall --all <query>` (or `memory_search` with `scope: "all"`) fans out across every project found under `PI_MEMSEARCH_SCAN_ROOTS` — one sequential `search -c <collection>` per project, including projects only other mesh agents ever indexed. Hits merge by score, each labeled with its origin project; never-indexed projects are skipped and counted, and the result reports searched/skipped totals. Expansion follows across repos: pass the hit's origin path as `project` to `memory_expand`. Strictly opt-in and read-side only — default recall stays project-scoped, and no store or collection is ever touched ([ADR 0003](docs/adr/0003-no-global-store-cross-repo-recall.md)).
+When the conversation happened in _another_ repo, cross-repo recall widens the search: `/recall --all <query>` (or `memory_search` with `scope: "all"`) fans out across every project found under `PI_MEMSEARCH_SCAN_ROOTS` — one sequential `search -c <collection>` per project, including projects only other mesh agents ever indexed. Hits merge by score, each labeled with its origin project; never-indexed projects are skipped and counted, and the result reports searched/skipped totals. Expansion follows across repos: pass the hit's origin path as `project` to `memory_expand`. Opt-in and read-side only — default recall stays project-scoped, and no store or collection is ever touched ([ADR 0003](docs/adr/0003-no-global-store-cross-repo-recall.md)).
 
 ### Redaction
 
-`memory_forget` removes exactly one entry — addressed by `chunk_hash` or `(date, time)`, no fuzzy matching — from its day file; the entry's chunks leave the collection on the next reindex. No copy survives in pi-memsearch — no recovery record, no audit log — so the tool result echoing the removed markdown is the only record, and salvageable facts re-enter via `memory_write`. Session transcripts and git history are outside the guarantee (`docs/adr/0004-redaction-over-recovery.md`).
+`memory_forget` removes exactly one entry — addressed by `chunk_hash` or `(date, time)`, no fuzzy matching — from its daily memory file; the entry's chunks leave the collection on the next reindex. No copy survives in pi-memsearch — no recovery record, no audit log — so the tool result echoing the removed markdown is the only record, and salvageable facts re-enter via `memory_write`. Session transcripts and git history are outside the guarantee ([ADR 0004](docs/adr/0004-redaction-over-recovery.md)).
 
 ### Memory compaction
 
@@ -99,7 +120,7 @@ When the conversation happened in _another_ repo, cross-repo recall widens the s
 
 ### Stable snapshot
 
-At session start, day rollover, after context compaction and after a `memory_forget` redaction, the package builds one block — usage instructions, the tail of today's memory file (3000 chars) and of yesterday's (2000) — and appends it to the system prompt on every turn. It is byte-identical between those checkpoints, so provider prefix caches survive. Mid-session writes deliberately do not refresh it; their content is already visible in tool history.
+At session start, day rollover, after context compaction and after a `memory_forget` redaction, the package builds one block — usage instructions, the tail of today's daily memory file (3000 chars) and of yesterday's (2000) — and appends it to the system prompt on every turn. It is byte-identical between those checkpoints, so provider prefix caches survive. Mid-session writes deliberately do not refresh it; their content is already visible in tool history.
 
 ### Auto-context
 
@@ -113,7 +134,7 @@ Milvus Lite allows a single client at a time, so every memsearch invocation goes
 
 | Tool                | Layer | Purpose                                                                                                                 |
 | ------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
-| `memory_write`      | —     | Persist a memory now: timestamped, anchored, appended to today's file                                                   |
+| `memory_write`      | —     | Persist a memory now: timestamped, anchored, appended to today's daily memory file                                      |
 | `memory_search`     | L1    | Top-k scored chunks for a query; `scope: "all"` widens to cross-repo recall                                             |
 | `memory_expand`     | L2    | Full section for a chunk hash, with its session anchor; `project` routes to a cross-repo hit's origin                   |
 | `memory_transcript` | L3    | Turns around an anchored entry in the origin transcript, on the branch the memory anchors to; pure file read            |
@@ -140,7 +161,7 @@ Everything shared with the mesh — provider, model, chunking — lives in memse
 
 A missing `uv` or memsearch degrades rather than breaks:
 
-- Capture and `memory_write` keep appending to the daily file, and the snapshot keeps reading it.
+- Capture and `memory_write` keep appending to the daily memory file, and the snapshot keeps reading it.
 - `memory_search`, `memory_expand` and `memory_compact` return install instructions instead of an error.
 - `memory_transcript` keeps working: L3 recall is a pure file read that never touches the backend.
 - Availability is re-probed with a short negative cache, so installing `uv` mid-session is picked up without a restart.
