@@ -28,6 +28,10 @@ The set of agents sharing one project's memory store and index through identical
 **Project scope**:
 The directory identity that keys a project's memory and collection: `$MEMSEARCH_DIR` if set, else git root, else cwd — memsearch's own resolution order, mirrored exactly.
 
+**Repository directory**:
+The working directory every memsearch child process runs at — the git root of the session's directory, else that directory — so a project `.memsearch.toml` layers as it would for a CLI run at the repo root. Coincides with the project scope except when `$MEMSEARCH_DIR` is set; even then children run here, and only the collection follows the override.
+_Avoid_: repo root, git root, project directory, project root
+
 **Collection**:
 The per-project vector index derived from the memory store, named `ms_<name>_<hash>` by memsearch's derivation. Rebuildable at any time; never the source of truth.
 _Avoid_: database, index (when the derived Milvus collection is meant)
