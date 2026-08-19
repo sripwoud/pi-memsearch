@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/sripwoud/pi-memsearch/compare/v1.2.0...v1.2.1) (2026-08-19)
+
+
+### Miscellaneous Chores
+
+* release 1.2.1 for the restructured README ([18f5620](https://github.com/sripwoud/pi-memsearch/commit/18f562029dcf8c5fc91618f9ee410fe428df77f1))
+
 ## [1.2.0](https://github.com/sripwoud/pi-memsearch/compare/v1.1.1...v1.2.0) (2026-08-18)
 
 
