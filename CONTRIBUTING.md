@@ -49,9 +49,31 @@ Before cutting one:
 
 ### Commit types decide whether a release cuts
 
-Raising the memsearch version ceiling in `src/contract.ts`, or the pi peer range in `package.json`, is a deliberate act: bump it, then re-run the integration suite on that line.
+Only `feat:` (minor), `fix:` (patch) and `!` / breaking (major) bump the version. `docs:`, `refactor:`, `chore:`, `test:` and `build:` open no release PR, however large the diff.
 
-Both files ship in the published tarball, so type those commits `feat:` (widened support) or `fix:` / `feat!:`. **Never `build:`** — it cuts no release, so the widened support would never reach a consumer. `build:` is for the lockfile and devDependencies, which never ship.
+A PR's **squash title is the only commit that reaches `master`** — types on the commits inside it are discarded. Type the PR title for the release you want.
+
+What ships in the tarball, and therefore needs a releasable type when it changes:
+
+| Path                                                           | Ships | Why                       |
+| -------------------------------------------------------------- | ----- | ------------------------- |
+| `extensions/`, `prompts/`, `skills/`, `src/`                   | yes   | `package.json` `files`    |
+| `README.md`, `LICENSE`, `package.json`                         | yes   | npm always includes these |
+| `docs/`, `CONTRIBUTING.md`, `AGENTS.md`, `CONTEXT.md`, `test/` | no    | GitHub only               |
+
+A README-only change is consumer-facing — the README is the npm and `pi.dev/packages` landing page — so type it `fix:`. If it already merged as `docs:`, force the release instead:
+
+```sh
+git commit --allow-empty -m "chore: release 1.2.3
+
+Release-As: 1.2.3"
+```
+
+Use the version you actually want; `Release-As:` is honored whatever the commit type.
+
+> **Note** — `README.md` carries `<!-- x-release-please-version -->` on its "Current release" line, wired through `extra-files` in `release-please-config.json`. Rewriting the README without that marker silently stops the version line from updating.
+
+Raising the memsearch version ceiling in `src/contract.ts`, or the pi peer range in `package.json`, is a deliberate act: bump it, then re-run the integration suite on that line. Type those commits `feat:` (widened support) or `fix:` / `feat!:`. **Never `build:`** — it cuts no release, so the widened support would never reach a consumer. `build:` is for the lockfile and devDependencies, which never ship.
 
 Commit subjects are lowercase, imperative, no trailing period. Do not add co-authors or AI attribution trailers; the hooks reject them.
 
