@@ -2,6 +2,8 @@ import { existsSync, readdirSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
 import { type Backend, DEFAULT_TOP_K, MissingCollectionError } from './backend.ts'
 import type { SearchHit } from './contract.ts'
+import { readIndexState } from './index-state.ts'
+import { canonicalize, deriveCollection, storeCommandCollection } from './scope.ts'
 
 export const SCAN_ROOTS_ENV = 'PI_MEMSEARCH_SCAN_ROOTS'
 
@@ -41,11 +43,25 @@ export function discoverProjects(roots: string[]): string[] {
   return [...projects].sort()
 }
 
+export function resolveDiscoveredCollection(dir: string, env: NodeJS.ProcessEnv): string {
+  return storeCommandCollection({ baseDir: dir, env }) ?? recordedCollection(dir) ?? deriveCollection(dir)
+}
+
+function recordedCollection(dir: string): string | undefined {
+  const stateDir = existsSync(join(dir, '.memsearch', 'memory')) ? join(dir, '.memsearch') : dir
+  try {
+    return readIndexState(join(stateDir, '.index-state.json'))?.collection
+  } catch {
+    return undefined
+  }
+}
+
 export interface CrossRepoHit extends SearchHit {
   project: string
 }
 
 export interface CrossRepoResult {
+  collapsed: string[]
   hits: CrossRepoHit[]
   searched: string[]
   skipped: string[]
@@ -64,7 +80,7 @@ export interface CrossRepoSearch {
 }
 
 export async function searchAcrossProjects(params: CrossRepoSearch): Promise<CrossRepoResult> {
-  const targets = dedupeByCollection([params.currentProject, ...params.projects], params.collectionFor)
+  const { collapsed, targets } = planTargets([params.currentProject, ...params.projects], params.collectionFor)
   const hits: CrossRepoHit[] = []
   const searched: string[] = []
   const skipped: string[] = []
@@ -86,20 +102,28 @@ export async function searchAcrossProjects(params: CrossRepoSearch): Promise<Cro
     params.onProgress?.(searched.length + skipped.length, targets.length)
   }
   hits.sort((first, second) => second.score - first.score)
-  return { hits: hits.slice(0, params.topK ?? DEFAULT_TOP_K), searched, skipped }
+  return { collapsed, hits: hits.slice(0, params.topK ?? DEFAULT_TOP_K), searched, skipped }
 }
 
-function dedupeByCollection(
+function planTargets(
   dirs: string[],
   collectionFor: (dir: string) => string,
-): { collection: string; dir: string }[] {
-  const seen = new Set<string>()
+): { collapsed: string[]; targets: { collection: string; dir: string }[] } {
+  const seenDirs = new Set<string>()
+  const seenCollections = new Set<string>()
+  const collapsed: string[] = []
   const targets: { collection: string; dir: string }[] = []
   for (const dir of dirs) {
+    const canonical = canonicalize(dir)
+    if (seenDirs.has(canonical)) continue
+    seenDirs.add(canonical)
     const collection = collectionFor(dir)
-    if (seen.has(collection)) continue
-    seen.add(collection)
+    if (seenCollections.has(collection)) {
+      collapsed.push(dir)
+      continue
+    }
+    seenCollections.add(collection)
     targets.push({ collection, dir })
   }
-  return targets
+  return { collapsed, targets }
 }

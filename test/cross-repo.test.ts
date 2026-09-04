@@ -1,6 +1,6 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { deepEqual, equal, ok, rejects } from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { test } from 'node:test'
@@ -163,11 +163,12 @@ test('a current project under a scan root is searched once', async () => {
   ok(tool)
   const ctx = createFakeContext({ cwd: alpha, session: TEST_SESSION })
 
-  await search(tool, ctx, { query: 'redis', scope: 'all' })
+  const text = await search(tool, ctx, { query: 'redis', scope: 'all' })
 
   equal(calls.length, 3)
   equal(calls[1]?.args.includes(deriveCollection(alpha)), true)
   equal(calls[2]?.args.includes(deriveCollection(beta)), true)
+  ok(text.includes('2 projects searched, 0 skipped.'), 'the same directory twice is deduplicated silently')
 })
 
 test('a store scoped by MEMSEARCH_DIR is labeled by its searched dir, not a parsed source path', async () => {
@@ -321,4 +322,101 @@ test('the store command derives every fan-out collection, once per target direct
   deepEqual(calls.slice(1).map((call) => call.args.at(-3)), [`ms_${basename(root)}`, 'ms_alpha', 'ms_beta'])
   const modes = readFileSync(log, 'utf8').trim().split('\n')
   equal(modes.filter((mode) => mode === 'collection').length, 3, 'one collection lookup per target project')
+})
+
+test('an absolute MEMSEARCH_DIR names the session collection only, never a discovered project', async () => {
+  const scanRoot = seedScanRoot(['alpha', 'beta'])
+  const central = mkdtempSync(join(tmpdir(), 'cross-repo-central-'))
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult('[]'), okResult('[]'), okResult('[]')],
+    { env: { MEMSEARCH_DIR: central, PI_MEMSEARCH_SCAN_ROOTS: scanRoot } },
+  )
+
+  const text = await search(tool, ctx, { query: 'redis', scope: 'all' })
+
+  deepEqual(
+    calls.slice(1).map((call) => call.args.at(-3)),
+    [central, join(scanRoot, 'alpha'), join(scanRoot, 'beta')].map(deriveCollection),
+  )
+  ok(text.includes('3 projects searched, 0 skipped'))
+})
+
+test('a discovered store at <dir>/memory is named from the directory holding it, override or not', async () => {
+  const scanRoot = seedScanRoot(['alpha'], ['memory'])
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult('[]'), okResult('[]')],
+    { env: { MEMSEARCH_DIR: '.memsearch', PI_MEMSEARCH_SCAN_ROOTS: scanRoot } },
+  )
+
+  await search(tool, ctx, { query: 'redis', scope: 'all' })
+
+  equal(calls[2]?.args.at(-3), deriveCollection(join(scanRoot, 'alpha')))
+})
+
+test('a discovered store is searched under the collection its index state records', async () => {
+  const scanRoot = seedScanRoot(['alpha'])
+  writeFileSync(
+    join(scanRoot, 'alpha', '.memsearch', '.index-state.json'),
+    JSON.stringify({ collection: 'ms_recorded_by_the_store', schema_version: 1, status: 'ok' }),
+  )
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult('[]'), okResult('[]')],
+    { env: { PI_MEMSEARCH_SCAN_ROOTS: scanRoot } },
+  )
+
+  await search(tool, ctx, { query: 'redis', scope: 'all' })
+
+  equal(calls[2]?.args.at(-3), 'ms_recorded_by_the_store')
+})
+
+test('a discovered index-state file from a future schema leaves the derived name in place', async () => {
+  const scanRoot = seedScanRoot(['alpha'])
+  writeFileSync(
+    join(scanRoot, 'alpha', '.memsearch', '.index-state.json'),
+    JSON.stringify({ collection: 'ms_unreadable', schema_version: 2 }),
+  )
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult('[]'), okResult('[]')],
+    { env: { PI_MEMSEARCH_SCAN_ROOTS: scanRoot } },
+  )
+
+  await search(tool, ctx, { query: 'redis', scope: 'all' })
+
+  equal(calls[2]?.args.at(-3), deriveCollection(join(scanRoot, 'alpha')))
+})
+
+test('distinct projects resolving to one collection are reported, not dropped silently', async () => {
+  const scanRoot = seedScanRoot(['alpha', 'beta'], ['memory'])
+  const alpha = join(scanRoot, 'alpha')
+  const beta = join(scanRoot, 'beta')
+  const command = storeCommand(
+    `case "$1" in\n  memory-dir) echo "$(pwd -P)/memory" ;;\n  collection) echo 'ms_one_for_all' ;;\nesac`,
+  )
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult('[]')],
+    { env: { PI_MEMSEARCH_SCAN_ROOTS: scanRoot, PI_MEMSEARCH_STORE_CMD: command } },
+  )
+
+  const text = await search(tool, ctx, { query: 'redis', scope: 'all' })
+
+  equal(calls.length, 2, 'one collection is searched once')
+  ok(text.includes('1 projects searched, 0 skipped, 2 collapsed'))
+  ok(text.includes(`collapsed (same collection as a project already searched): ${alpha}, ${beta}`))
+})
+
+test('a repo-local store ignores an index-state file belonging to a sibling store', async () => {
+  const scanRoot = seedScanRoot(['alpha'])
+  mkdirSync(join(scanRoot, 'alpha', 'memory'), { recursive: true })
+  writeFileSync(
+    join(scanRoot, 'alpha', '.index-state.json'),
+    JSON.stringify({ collection: 'ms_the_other_store', schema_version: 1, status: 'ok' }),
+  )
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult('[]'), okResult('[]')],
+    { env: { PI_MEMSEARCH_SCAN_ROOTS: scanRoot } },
+  )
+
+  await search(tool, ctx, { query: 'redis', scope: 'all' })
+
+  equal(calls[2]?.args.at(-3), deriveCollection(join(scanRoot, 'alpha')))
 })

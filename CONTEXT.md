@@ -37,7 +37,7 @@ The working directory every memsearch child process runs at — the git root of 
 _Avoid_: repo root, git root, project directory, project root
 
 **Collection**:
-The per-project vector index derived from the memory store, named `ms_<name>_<hash>` by memsearch's derivation over the project scope — `$MEMSEARCH_DIR` included, because upstream treats an explicit override as global scope and moves the store and the collection together. Rebuildable at any time; never the source of truth.
+The per-project vector index derived from the memory store, named `ms_<name>_<hash>` by memsearch's derivation over the project scope — `$MEMSEARCH_DIR` included, because upstream treats an explicit override as global scope and moves the store and the collection together. That is how a session names its own collection. A project a fan-out discovered is named from that project instead — the store command, else the name its index state records, else the derivation over the discovered directory — because the searching session's override says nothing about a store it merely found. Rebuildable at any time; never the source of truth.
 _Avoid_: database, index (when the derived Milvus collection is meant)
 
 **Index-state directory**:
@@ -80,6 +80,9 @@ The per-session child process that holds the embedding model warm and serves aut
 **Cross-repo recall**:
 Opt-in recall escalation that searches other projects' collections when project-scoped recall misses, labeling hits by origin project. Read-side only — never a second store.
 _Avoid_: global memory, global search
+
+**Collapsed project**:
+A discovered project dropped from a fan-out because a project already searched claims its collection. Reported by path, never silent. Distinct from a skipped project, which was searched and had no collection, and from the current project met again under a scan root, which is one directory reached twice and stays quiet.
 
 **Procedural memory**:
 The layer of remembered work expressed as reusable skills, beside the episodic daily memory files. Lives as skill candidates until a human installs one.
