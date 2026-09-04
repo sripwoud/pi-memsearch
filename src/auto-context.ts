@@ -1,6 +1,5 @@
 import { fileURLToPath } from 'node:url'
 import { formatHitBlock, MEMSEARCH_SPEC, parseSearchHitList, type SearchHit } from './contract.ts'
-import { deriveCollection } from './scope.ts'
 import type { SidecarProcess, SpawnSidecarFn } from './sidecar.ts'
 
 export const AUTO_CONTEXT_ENV = 'PI_MEMSEARCH_AUTO_CONTEXT'
@@ -45,15 +44,15 @@ export interface AutoContextMessage {
   display: false
 }
 
-export interface AutoContextDirs {
+export interface AutoContextTarget {
+  collection: string
   repositoryDir: string
-  scopeDir: string
 }
 
 export interface AutoContext {
   enabled: boolean
   onPrompt(prompt: string): Promise<{ message: AutoContextMessage } | undefined>
-  start(dirs: AutoContextDirs): void
+  start(target: AutoContextTarget): void
   status(): AutoContextStatus
   stop(): void
 }
@@ -219,10 +218,10 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
   return {
     enabled,
     onPrompt,
-    start(dirs) {
+    start(target) {
       if (!enabled) return
-      repositoryDir = dirs.repositoryDir
-      collection = deriveCollection(dirs.scopeDir)
+      repositoryDir = target.repositoryDir
+      collection = target.collection
       counters = freshCounters()
       respawns = 0
       consecutiveTimeouts = 0
@@ -231,7 +230,7 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
         session.stopped = true
         session.proc.end()
       }
-      spawn(dirs.repositoryDir)
+      spawn(target.repositoryDir)
     },
     status() {
       return {

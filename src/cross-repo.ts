@@ -2,7 +2,6 @@ import { existsSync, readdirSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
 import { type Backend, DEFAULT_TOP_K, MissingCollectionError } from './backend.ts'
 import type { SearchHit } from './contract.ts'
-import { deriveCollection } from './scope.ts'
 
 export const SCAN_ROOTS_ENV = 'PI_MEMSEARCH_SCAN_ROOTS'
 
@@ -36,7 +35,7 @@ export function discoverProjects(roots: string[]): string[] {
     }
     for (const child of children) {
       const dir = join(root, child)
-      if (existsSync(join(dir, '.memsearch', 'memory'))) projects.add(dir)
+      if (existsSync(join(dir, '.memsearch', 'memory')) || existsSync(join(dir, 'memory'))) projects.add(dir)
     }
   }
   return [...projects].sort()
@@ -54,6 +53,7 @@ export interface CrossRepoResult {
 
 export interface CrossRepoSearch {
   backend: Backend
+  collectionFor: (dir: string) => string
   currentProject: string
   onProgress?: (done: number, total: number) => void
   onQueued?: (holder: string) => void
@@ -64,7 +64,7 @@ export interface CrossRepoSearch {
 }
 
 export async function searchAcrossProjects(params: CrossRepoSearch): Promise<CrossRepoResult> {
-  const targets = dedupeByCollection([params.currentProject, ...params.projects])
+  const targets = dedupeByCollection([params.currentProject, ...params.projects], params.collectionFor)
   const hits: CrossRepoHit[] = []
   const searched: string[] = []
   const skipped: string[] = []
@@ -89,11 +89,14 @@ export async function searchAcrossProjects(params: CrossRepoSearch): Promise<Cro
   return { hits: hits.slice(0, params.topK ?? DEFAULT_TOP_K), searched, skipped }
 }
 
-function dedupeByCollection(dirs: string[]): { collection: string; dir: string }[] {
+function dedupeByCollection(
+  dirs: string[],
+  collectionFor: (dir: string) => string,
+): { collection: string; dir: string }[] {
   const seen = new Set<string>()
   const targets: { collection: string; dir: string }[] = []
   for (const dir of dirs) {
-    const collection = deriveCollection(dir)
+    const collection = collectionFor(dir)
     if (seen.has(collection)) continue
     seen.add(collection)
     targets.push({ collection, dir })
