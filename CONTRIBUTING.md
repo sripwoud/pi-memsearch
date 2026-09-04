@@ -53,7 +53,7 @@ Before cutting one:
 
 ### Commit types decide whether a release cuts
 
-Only `feat:` (minor), `fix:` (patch) and `!` / breaking (major) bump the version. `docs:`, `refactor:`, `chore:`, `test:` and `build:` open no release PR, however large the diff.
+Only `feat:` (minor), `fix:` (patch) and `!` / breaking (major) bump the version. `ci:`, `docs:`, `refactor:`, `chore:`, `test:` and `build:` open no release PR, however large the diff.
 
 A PR's **squash title is the only commit that reaches `master`** — types on the commits inside it are discarded. Type the PR title for the release you want.
 
@@ -78,6 +78,8 @@ Use the version you actually want; `Release-As:` is honored whatever the commit 
 > **Note** — `README.md` carries `<!-- x-release-please-version -->` on its "Current release" line, wired through `extra-files` in `release-please-config.json`. Rewriting the README without that marker silently stops the version line from updating.
 
 Raising the memsearch version ceiling in `src/contract.ts`, or the pi peer range in `package.json`, is a deliberate act: bump it, then re-run the integration suite on that line. Type those commits `feat:` (widened support) or `fix:` / `feat!:`. **Never `build:`** — it cuts no release, so the widened support would never reach a consumer. `build:` is for the lockfile and devDependencies, which never ship.
+
+Raising `engines.node` is three edits in one commit: the floor in `package.json`, `devDependencies.@types/node` to the matching major, and the `allowedVersions` ceiling in `renovate.json` that holds it there. Miss the third and Renovate stops proposing `@types/node` at all — `allowedVersions` filters candidate updates and never rolls one back, so a range above the ceiling sits frozen with no PR to surface it.
 
 Commit subjects are lowercase, imperative, no trailing period. Do not add co-authors or AI attribution trailers; the hooks reject them.
 
