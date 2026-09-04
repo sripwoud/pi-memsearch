@@ -415,11 +415,11 @@ test('a delegated store inside a .memsearch tree still reports the path it read'
   ok(text.includes('index: no state recorded yet'))
 })
 
-test('a store outside a .memsearch tree reached through a symlink reports normally', async () => {
+test('a store symlinked into a .memsearch tree reports the tree root, as memsearch resolves it too', async () => {
   const central = mkdtempSync(join(tmpdir(), 'memory-status-central-'))
-  mkdirSync(join(central, '.memsearch'), { recursive: true })
+  mkdirSync(join(central, '.memsearch', 'stores'), { recursive: true })
   const link = join(central, 'store')
-  symlinkSync(join(central, '.memsearch'), link)
+  symlinkSync(join(central, '.memsearch', 'stores'), link)
   const { ctx, tool } = setup(
     [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
     { env: { PI_MEMSEARCH_STORE_CMD: answeringStore(join(link, 'pi'), 'ms_pi_deadbeef') } },
@@ -428,5 +428,5 @@ test('a store outside a .memsearch tree reached through a symlink reports normal
   const text = await status(tool, ctx)
 
   ok(!text.includes('no state file will be written'))
-  ok(text.includes('index state:'))
+  ok(text.includes(`index state: ${join(central, '.memsearch', '.index-state.json')}`))
 })
