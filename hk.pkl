@@ -1,4 +1,5 @@
 amends "package://github.com/jdx/hk/releases/download/v1.47.0/hk@1.47.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.47.0/hk@1.47.0#/Builtins.pkl"
 
 local linters = new Mapping<String, Step> {
   ["biome"] {
@@ -13,6 +14,7 @@ local linters = new Mapping<String, Step> {
   ["typescript"] {
     check = "tsc"
   }
+  ["zizmor"] = Builtins.zizmor
 }
 
 hooks {
