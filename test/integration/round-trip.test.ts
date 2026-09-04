@@ -53,7 +53,9 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
   test('shutdown indexes the memory store without partial failures', async () => {
     await live.fire('session_shutdown')
 
-    const state = readIndexState(indexStatePath(live.memoryDir, { baseDir: live.root, env: process.env }))
+    const statePath = indexStatePath(live.memoryDir, { baseDir: live.root, env: process.env })
+    ok(statePath, 'the live store sits inside a .memsearch tree, so memsearch writes state beside it')
+    const state = readIndexState(statePath)
     ok(state, 'memsearch wrote an index-state file')
     equal(state.status, 'ok')
     equal(state.failedFiles.length, 0)

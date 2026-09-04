@@ -89,7 +89,7 @@ export function deriveCollection(projectDir: string): string {
   return `ms_${sanitized}_${hash}`
 }
 
-function canonicalize(dir: string): string {
+export function canonicalize(dir: string): string {
   try {
     return realpathSync(dir)
   } catch {

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { resolveRepositoryDir, resolveStateDir, type ScopeOptions } from './scope.ts'
+import { dirname, join, relative, resolve, sep } from 'node:path'
+import { canonicalize, resolveRepositoryDir, resolveStateDir, type ScopeOptions, STORE_CMD_ENV } from './scope.ts'
 
 export interface IndexFailure {
   error: string
@@ -14,12 +14,36 @@ export interface IndexState {
   status: string
 }
 
-export function indexStatePath(memoryDir: string, { baseDir, env = process.env }: ScopeOptions): string {
+export function indexStatePath(memoryDir: string, { baseDir, env = process.env }: ScopeOptions): string | undefined {
   const delegated = resolveStateDir({ baseDir, env })
   if (delegated !== undefined) return join(delegated, '.index-state.json')
   const override = env['MEMSEARCH_DIR']
-  if (!override) return join(dirname(memoryDir), '.index-state.json')
-  return join(resolve(resolveRepositoryDir(baseDir), override), '.index-state.json')
+  if (override) return join(resolve(resolveRepositoryDir(baseDir), override), '.index-state.json')
+  const tree = memsearchTree(memoryDir)
+  if (tree) return join(tree, '.index-state.json')
+  if (env[STORE_CMD_ENV]) return undefined
+  return join(dirname(memoryDir), '.index-state.json')
+}
+
+function memsearchTree(memoryDir: string): string | undefined {
+  return treePrefix(resolve(memoryDir)) ?? treePrefix(resolveSymlinks(memoryDir))
+}
+
+function treePrefix(path: string): string | undefined {
+  const parts = path.split(sep)
+  const depth = parts.indexOf('.memsearch')
+  return depth === -1 ? undefined : parts.slice(0, depth + 1).join(sep)
+}
+
+function resolveSymlinks(path: string): string {
+  const absolute = resolve(path)
+  let existing = absolute
+  while (!existsSync(existing)) {
+    const parent = dirname(existing)
+    if (parent === existing) return absolute
+    existing = parent
+  }
+  return join(canonicalize(existing), relative(existing, absolute))
 }
 
 export function readIndexState(path: string): IndexState | undefined {

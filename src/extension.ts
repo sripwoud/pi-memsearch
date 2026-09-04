@@ -594,6 +594,12 @@ function compactOutputDir(memoryDir: string): string {
 
 function describeIndexHealth(memoryDir: string, options: ScopeOptions): string[] {
   const path = indexStatePath(memoryDir, options)
+  if (!path) {
+    return [
+      'index: no state file will be written (store is outside a .memsearch tree, the store command declines'
+      + ' state-dir, and MEMSEARCH_DIR is unset) - answer state-dir to restore index health',
+    ]
+  }
   const lines = [`index state: ${path}`]
   let state: IndexState | undefined
   try {
