@@ -30,7 +30,7 @@ run = "pi -e ./extensions/memsearch.ts"
 [tools]
 "cargo:convco" = "latest"
 dprint = "latest"
-hk = "1.47.0"
+hk = "1.57.0"
 node = "24"
 "npm:@biomejs/biome" = "latest"
 "npm:typescript" = "latest"
