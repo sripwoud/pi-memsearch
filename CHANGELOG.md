@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/sripwoud/pi-memsearch/compare/v1.2.1...v1.3.0) (2026-09-04)
+
+
+### Features
+
+* **scope:** delegate store resolution to an opt-in command ([#74](https://github.com/sripwoud/pi-memsearch/issues/74)) ([dd36c77](https://github.com/sripwoud/pi-memsearch/commit/dd36c77f498ae146f83347fc2ca6f2bc64117b7f)), closes [#73](https://github.com/sripwoud/pi-memsearch/issues/73)
+
 ## [1.2.1](https://github.com/sripwoud/pi-memsearch/compare/v1.2.0...v1.2.1) (2026-08-19)
 
 
