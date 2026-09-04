@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/sripwoud/pi-memsearch/compare/v1.4.0...v1.4.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **readme:** point at the store-command contract from where it is configured ([d0cdee5](https://github.com/sripwoud/pi-memsearch/commit/d0cdee5f8337c8dcff443f19bb3129b6e8609d15))
+
 ## [1.4.0](https://github.com/sripwoud/pi-memsearch/compare/v1.3.0...v1.4.0) (2026-09-04)
 
 
