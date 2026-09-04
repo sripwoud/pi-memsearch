@@ -27,7 +27,7 @@ export function resolveProjectScope({ baseDir, env = process.env }: ScopeOptions
   }
   const override = env['MEMSEARCH_DIR']
   if (override) {
-    const dir = resolve(baseDir, override)
+    const dir = resolve(resolveRepositoryDir(baseDir), override)
     return { dir, memoryDir: join(dir, 'memory') }
   }
   const dir = resolveRepositoryDir(baseDir)

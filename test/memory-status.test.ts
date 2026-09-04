@@ -189,7 +189,7 @@ test('MEMSEARCH_DIR holds the index state with no store command in play', async 
   ok(text.includes('index: ok'))
 })
 
-test('a relative MEMSEARCH_DIR resolves at the repository, where the memsearch child writes it', async () => {
+test('a relative MEMSEARCH_DIR resolves at the repository for both the state and the store', async () => {
   const { ctx, root, tool } = setup(
     [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
     { env: { MEMSEARCH_DIR: '.memsearch' } },
@@ -200,7 +200,7 @@ test('a relative MEMSEARCH_DIR resolves at the repository, where the memsearch c
   const text = await status(tool, { ...ctx, cwd: nested })
 
   ok(text.includes(`index state: ${join(root, '.memsearch', '.index-state.json')}`))
-  ok(text.includes(`store: ${join(nested, '.memsearch', 'memory')}`))
+  ok(text.includes(`store: ${join(root, '.memsearch', 'memory')}`))
 })
 
 test('an ok index state reports the last completed run', async () => {

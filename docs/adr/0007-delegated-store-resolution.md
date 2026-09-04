@@ -18,7 +18,7 @@ Concretely:
 
 - **Cross-repo discovery learned a second store shape, and not as part of the opt-in.** A scanned directory counted as a project only when it held `<dir>/.memsearch/memory`; `<dir>/memory` — the shape `MEMSEARCH_DIR` itself implies — now counts too, whether or not the command is set. Fan-out over a store that sits outside the repos found nothing otherwise. This widens what counts as a project by one directory name, which is mesh-conformant on its own merit; it is the one part of this change visible with the variable unset.
 - **Fan-out asks the command about store directories.** Discovered projects are the directories holding the stores, so a resolver must answer for a store it is standing in. The current project is exempt — its leg reuses the collection already resolved at the session's own directory, so `scope: "all"` and `scope: "project"` can never disagree about where the current project's memory lives.
-- **The repository directory is untouched.** memsearch child processes still run at the git root of the session's directory, so a project `.memsearch.toml` layers as it would for a CLI run there — the same split `MEMSEARCH_DIR` already has.
+- **The repository directory is untouched.** memsearch child processes still run at the git root of the session's directory, so a project `.memsearch.toml` layers as it would for a CLI run there — the same split an absolute `MEMSEARCH_DIR` has. ([#91](https://github.com/sripwoud/pi-memsearch/issues/91) later closed the relative case: a relative override resolves at the repository directory for the store too, so only an absolute one still splits.)
 
 Considered alternatives:
 

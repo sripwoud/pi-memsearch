@@ -44,6 +44,18 @@ test('MEMSEARCH_DIR overrides scope and holds the memory dir directly', () => {
   equal(scope.memoryDir, '/shared/memsearch/memory')
 })
 
+test('a relative MEMSEARCH_DIR resolves at the repository, where the memsearch child reads it', () => {
+  const root = mkdtempSync(join(tmpdir(), 'scope-'))
+  mkdirSync(join(root, '.git'))
+  const nested = join(root, 'packages', 'core')
+  mkdirSync(nested, { recursive: true })
+
+  const scope = resolveProjectScope({ baseDir: nested, env: { MEMSEARCH_DIR: '.memsearch' } })
+
+  equal(scope.dir, join(root, '.memsearch'))
+  equal(scope.memoryDir, join(root, '.memsearch', 'memory'))
+})
+
 test('scope falls back to the git root from a nested directory', () => {
   const root = mkdtempSync(join(tmpdir(), 'scope-'))
   mkdirSync(join(root, '.git'))
