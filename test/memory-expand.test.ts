@@ -2,7 +2,7 @@ import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding
 import { deepEqual, equal, match, ok, rejects } from 'node:assert/strict'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { test } from 'node:test'
 import { deriveCollection } from '../src/scope.ts'
 import {
@@ -14,10 +14,10 @@ import {
   okResult,
   VERSION_STDOUT,
 } from './fixtures.ts'
-import { createFakeContext, type FakeExecStep, setupExtension, TEST_SESSION } from './harness.ts'
+import { createFakeContext, type FakeExecStep, setupExtension, storeCommand, TEST_SESSION } from './harness.ts'
 
-function setup(steps: FakeExecStep[]) {
-  const { calls, ctx, root, tools } = setupExtension(steps, { prefix: 'memory-expand-' })
+function setup(steps: FakeExecStep[], env?: NodeJS.ProcessEnv) {
+  const { calls, ctx, root, tools } = setupExtension(steps, { prefix: 'memory-expand-', ...(env ? { env } : {}) })
   const tool = tools.get('memory_expand')
   ok(tool, 'memory_expand tool is registered')
   return { calls, ctx, root, tool }
@@ -73,6 +73,21 @@ test('an origin project routes expansion to that project collection', async () =
     '--',
     EXPAND_RESULT.chunk_hash,
   ])
+})
+
+test('the store command names the origin project collection too', async () => {
+  const origin = mkdtempSync(join(tmpdir(), 'expand-origin-'))
+  const command = storeCommand(
+    `case "$1" in\n  memory-dir) echo "$(pwd -P)/memory" ;;\n  collection) echo "ms_$(basename "$(pwd -P)")" ;;\nesac`,
+  )
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(JSON.stringify(EXPAND_RESULT))],
+    { PI_MEMSEARCH_STORE_CMD: command },
+  )
+
+  await expand(tool, ctx, EXPAND_RESULT.chunk_hash, origin)
+
+  equal(calls[1]?.args.at(-3), `ms_${basename(origin)}`)
 })
 
 test('an empty origin project is treated as absent, not as a path', async () => {

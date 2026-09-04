@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import type { Backend } from './backend.ts'
-import { deriveCollection, resolveProjectScope } from './scope.ts'
+import { resolveCollection, resolveProjectScope } from './scope.ts'
 
 export const INDEX_DEBOUNCE_MS = 5_000
 export const SHUTDOWN_CAP_MS = 15_000
@@ -78,7 +78,9 @@ export function createIndexTriggers(deps: IndexTriggersDeps): IndexTriggers {
     const scope = resolveProjectScope({ baseDir: cwd, env: deps.env })
     if (!existsSync(scope.memoryDir)) return
     try {
-      await deps.backend.index(scope.memoryDir, deriveCollection(scope.dir), { signal: controller.signal })
+      await deps.backend.index(scope.memoryDir, resolveCollection({ baseDir: cwd, env: deps.env }), {
+        signal: controller.signal,
+      })
       lastError = undefined
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)

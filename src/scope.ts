@@ -1,6 +1,9 @@
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+
+export const STORE_CMD_ENV = 'PI_MEMSEARCH_STORE_CMD'
 
 export interface ProjectScope {
   dir: string
@@ -12,7 +15,16 @@ export interface ScopeOptions {
   env?: NodeJS.ProcessEnv
 }
 
+type StoreMode = 'collection' | 'memory-dir'
+
+const storeAnswers = new Map<string, string>()
+
 export function resolveProjectScope({ baseDir, env = process.env }: ScopeOptions): ProjectScope {
+  const command = env[STORE_CMD_ENV]
+  if (command) {
+    const memoryDir = askStoreCommand(command, 'memory-dir', resolve(baseDir))
+    return { dir: dirname(memoryDir), memoryDir }
+  }
   const override = env['MEMSEARCH_DIR']
   if (override) {
     const dir = resolve(baseDir, override)
@@ -20,6 +32,28 @@ export function resolveProjectScope({ baseDir, env = process.env }: ScopeOptions
   }
   const dir = resolveRepositoryDir(baseDir)
   return { dir, memoryDir: join(dir, '.memsearch', 'memory') }
+}
+
+export function resolveCollection({ baseDir, env = process.env }: ScopeOptions): string {
+  const command = env[STORE_CMD_ENV]
+  if (command) return askStoreCommand(command, 'collection', resolve(baseDir))
+  return deriveCollection(resolveProjectScope({ baseDir, env }).dir)
+}
+
+function askStoreCommand(command: string, mode: StoreMode, dir: string): string {
+  const key = `${command} ${mode} ${dir}`
+  const cached = storeAnswers.get(key)
+  if (cached !== undefined) return cached
+  const run = spawnSync(command, [mode], { cwd: dir, encoding: 'utf8' })
+  if (run.error) throw new Error(`${STORE_CMD_ENV} (${command} ${mode}) failed to run: ${run.error.message}`)
+  if (run.status !== 0)
+    throw new Error(`${STORE_CMD_ENV} (${command} ${mode}) exited ${run.status}: ${run.stderr.trim()}`)
+  const answer = run.stdout.trim()
+  if (answer === '') throw new Error(`${STORE_CMD_ENV} (${command} ${mode}) printed nothing`)
+  if (mode === 'memory-dir' && !isAbsolute(answer))
+    throw new Error(`${STORE_CMD_ENV} (${command} ${mode}) must print an absolute path, got "${answer}"`)
+  storeAnswers.set(key, answer)
+  return answer
 }
 
 export function resolveRepositoryDir(baseDir: string): string {

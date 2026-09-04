@@ -1,6 +1,6 @@
 # memsearch: CLI and index contract (research for pi-memsearch)
 
-Primary source: `/home/sripwoud/code/memsearch` (git checkout, `main` @ `d5809d7`, 2026-08-12, version 0.4.17 per `pyproject.toml:7`). Citations are checkout-relative. Runtime behavior marked "measured" was verified live on this machine against the installed release 0.4.16 (`memsearch --version`) — one patch behind the checkout; differences are called out where they matter.
+Primary source: `/home/user/code/memsearch` (git checkout, `main` @ `d5809d7`, 2026-08-12, version 0.4.17 per `pyproject.toml:7`). Citations are checkout-relative. Runtime behavior marked "measured" was verified live on this machine against the installed release 0.4.16 (`memsearch --version`) — one patch behind the checkout; differences are called out where they matter.
 
 ## Summary: what a wrapper needs to know
 

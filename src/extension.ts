@@ -21,7 +21,7 @@ import {
   removeCompactBlock,
   removeEntry,
 } from './redaction.ts'
-import { deriveCollection, type ProjectScope, resolveProjectScope, resolveRepositoryDir } from './scope.ts'
+import { type ProjectScope, resolveCollection, resolveProjectScope, resolveRepositoryDir } from './scope.ts'
 import { type SpawnSidecarFn, spawnSidecarProcess } from './sidecar.ts'
 import { buildSnapshot } from './snapshot.ts'
 import { DEFAULT_CONTEXT, DEFAULT_LIMIT, renderTranscript } from './transcript.ts'
@@ -150,6 +150,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           if (scanRoots) {
             const result = await searchAcrossProjects({
               backend,
+              collectionFor: (dir) => (dir === scope.dir ? collection : resolveCollection({ baseDir: dir, env })),
               currentProject: scope.dir,
               onProgress: (done, total) =>
                 onUpdate?.({
@@ -194,7 +195,9 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         'Expand a memory chunk (by chunk_hash from memory_search) into its full section, with the session anchor pointing at the original transcript.',
       execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
         const { collection, options } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
-        const target = params.project ? deriveCollection(resolve(ctx.cwd, params.project)) : collection
+        const target = params.project
+          ? resolveCollection({ baseDir: resolve(ctx.cwd, params.project), env })
+          : collection
         return orInstallInstructions(async () => {
           const section = await backend.expand(params.chunk_hash, target, options)
           return { content: [{ text: formatSection(section), type: 'text' as const }], details: { section } }
@@ -348,7 +351,12 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           lines.push('backend: available', `memsearch: ${availability.version} (pinned ${MEMSEARCH_SPEC})`)
         else
           lines.push(`backend: unavailable (${availability.reason})`, availability.instructions)
-        lines.push(`scope: ${scope.dir}`, `collection: ${collection}`, describeBootstrap(bootstrapState))
+        lines.push(
+          `scope: ${scope.dir}`,
+          `store: ${scope.memoryDir}`,
+          `collection: ${collection}`,
+          describeBootstrap(bootstrapState),
+        )
         lines.push(...describeIndexHealth(scope.memoryDir))
         const failure = indexer.lastFailure()
         if (failure !== undefined) lines.push(`last index run: failed (${failure})`)
@@ -415,8 +423,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
     if (autoContext.enabled) {
       pi.on('session_start', (_event, ctx) => {
         autoContext.start({
+          collection: resolveCollection({ baseDir: ctx.cwd, env }),
           repositoryDir: resolveRepositoryDir(ctx.cwd),
-          scopeDir: resolveProjectScope({ baseDir: ctx.cwd, env }).dir,
         })
       })
       pi.on('session_shutdown', () => {
@@ -480,7 +488,7 @@ function parseForgetAddress(params: ForgetParams): ForgetAddress {
 
 function resolveTarget(ctx: ExtensionContext, env: NodeJS.ProcessEnv, options: CommandOptions): RecallTarget {
   const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
-  return { collection: deriveCollection(scope.dir), options, scope }
+  return { collection: resolveCollection({ baseDir: ctx.cwd, env }), options, scope }
 }
 
 async function orInstallInstructions<T>(run: () => Promise<T>) {

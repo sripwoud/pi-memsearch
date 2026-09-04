@@ -1,6 +1,7 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { deepEqual, equal, match, ok, rejects } from 'node:assert/strict'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { deriveCollection } from '../src/scope.ts'
@@ -17,9 +18,9 @@ import {
   UVX_PREFIX,
   VERSION_STDOUT,
 } from './fixtures.ts'
-import { type FakeExecStep, setupExtension } from './harness.ts'
+import { answeringStore, type FakeExecStep, setupExtension } from './harness.ts'
 
-function setup(steps: FakeExecStep[], options: { clock?: () => Date } = {}) {
+function setup(steps: FakeExecStep[], options: { clock?: () => Date; env?: NodeJS.ProcessEnv } = {}) {
   const { calls, ctx, root, tools } = setupExtension(steps, { ...options, prefix: 'memory-status-' })
   const tool = tools.get('memory_status')
   ok(tool, 'memory_status tool is registered')
@@ -50,8 +51,25 @@ test('reports version, scope, collection and chunk count', async () => {
   equal(calls[1]?.options.timeoutMs, 10_000)
   ok(text.includes('memsearch: 0.4.17'))
   ok(text.includes(`scope: ${root}`))
+  ok(text.includes(`store: ${join(root, '.memsearch', 'memory')}`))
   ok(text.includes(`collection: ${collection}`))
   ok(text.includes('indexed chunks: 42'))
+})
+
+test('a delegated store surfaces its dir and collection, so the active seam is visible', async () => {
+  const central = mkdtempSync(join(tmpdir(), 'memory-status-central-'))
+  const command = answeringStore(join(central, 'memory'), 'ms_central_deadbeef')
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
+    { env: { PI_MEMSEARCH_STORE_CMD: command } },
+  )
+
+  const text = await status(tool, ctx)
+
+  deepEqual(calls[1]?.args, [...UVX_PREFIX, 'stats', '-c', 'ms_central_deadbeef'])
+  ok(text.includes(`scope: ${central}`))
+  ok(text.includes(`store: ${join(central, 'memory')}`))
+  ok(text.includes('collection: ms_central_deadbeef'))
 })
 
 test('probes the version once and reuses it on later calls', async () => {

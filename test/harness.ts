@@ -289,6 +289,18 @@ export function seedHome(base: string, options: { globalConfig?: boolean; onnxMo
   return home
 }
 
+export function storeCommand(body: string): string {
+  const file = join(mkdtempSync(join(tmpdir(), 'store-cmd-')), 'resolve')
+  writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+  return file
+}
+
+export function answeringStore(memoryDir: string, collection: string): string {
+  return storeCommand(
+    `case "$1" in\n  memory-dir) echo '${memoryDir}' ;;\n  collection) echo '${collection}' ;;\nesac`,
+  )
+}
+
 export function createProjectRoot(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix))
   mkdirSync(join(root, '.git'))

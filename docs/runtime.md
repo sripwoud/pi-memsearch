@@ -20,11 +20,13 @@ Registrations live in `src/extension.ts`, except capture (`src/capture.ts`).
 
 ## Memory entries
 
-**Project scope** keys the memory store and the collection: `$MEMSEARCH_DIR`, else the git root, else the working directory — memsearch's own resolution order, mirrored exactly (`src/scope.ts`).
+**Project scope** keys the memory store and the collection: the store command, else `$MEMSEARCH_DIR`, else the git root, else the working directory — memsearch's own resolution order, mirrored exactly, with an opt-in seam in front (`src/scope.ts`).
 
-**Repository directory** is the working directory every memsearch child process runs at: the git root of the session's directory, else that directory. A project `.memsearch.toml` therefore layers as it would for a CLI run there. It coincides with the project scope except when `$MEMSEARCH_DIR` is set — even then children run at the repository directory, and only the collection follows the override.
+**Repository directory** is the working directory every memsearch child process runs at: the git root of the session's directory, else that directory. A project `.memsearch.toml` therefore layers as it would for a CLI run there. It coincides with the project scope except when `$MEMSEARCH_DIR` or the store command is set — even then children run at the repository directory, and only the store and collection follow the override.
 
 **Collection** name is `ms_<sanitized-basename>_<8 hex of sha256(abs path)>`, memsearch's derivation (`src/scope.ts`), so pi searches the same collection every other mesh agent builds. It hashes the absolute path: moving a repo yields a new collection, and the next `session_start` catch-up indexes into it.
+
+**Store command**, opt-in via `PI_MEMSEARCH_STORE_CMD`, takes over both derivations so pi can join a store outside the repos. `<cmd> memory-dir` prints the absolute store directory, `<cmd> collection` the collection name; both run with the working directory set to the directory being resolved. It outranks `MEMSEARCH_DIR`. A non-zero exit, empty output, or a relative store path raises an error naming the command and the mode — there is no fallback, because a wrong store means memory written to the wrong place. Answers are memoized per command, mode and directory for the life of the process, so capture, the indexer, every tool call, cross-repo fan-out and auto-context share one subprocess per directory. Point it at a leaf `memory` directory: index state resolves beside the store, so `<project>/memory` puts state at `<project>/.index-state.json`, while a directory holding day files directly makes siblings collide over one state file. Cross-repo fan-out asks it about each discovered project directory, which is a store directory rather than a session directory, so a resolver has to answer for a store it is standing in. The current project is exempt: its leg of the fan-out reuses the collection already resolved for the session, at the session's own directory. Rationale and rejected alternatives: [ADR 0007](adr/0007-delegated-store-resolution.md).
 
 **Entry shape** in a daily memory file:
 
@@ -70,6 +72,7 @@ L3 exists because L2 sometimes loses the reasoning that produced a decision ([AD
 Opt-in and read-side only. `/recall --all <query>`, or `memory_search` with `scope: "all"`:
 
 - Fans out across every project found under `PI_MEMSEARCH_SCAN_ROOTS` — one sequential `search -c <collection>` per project, including projects only other mesh agents ever indexed.
+- A scanned directory counts as a project when it holds `.memsearch/memory/` or `memory/`. The second shape is what `MEMSEARCH_DIR` and the store command produce when the store sits outside the repos; without it, fan-out over such a store finds nothing. It is accepted whether or not the store command is set.
 - Hits merge by score, each labeled with its origin project.
 - Never-indexed projects are skipped and counted; the result reports searched/skipped totals.
 - Expansion follows across repos: pass the hit's origin path as `project` to `memory_expand`. The returned anchor makes L3 work across projects too.
@@ -156,6 +159,8 @@ A missing `uv` or memsearch never breaks a session:
 | `memory_search`, `memory_expand`, `memory_compact` | Return install instructions, not an error                                 |
 | `memory_transcript`                                | Unaffected — a pure file read                                             |
 | Auto-context                                       | No injection; the prompt proceeds                                         |
+
+The store command is the deliberate exception: when it is set and fails, resolution raises instead of degrading, because a silent fallback would write memory to the wrong store.
 
 Availability is re-probed with a short negative cache, so installing `uv` mid-session is picked up without a restart. Once the backend is back, the next index makes everything written in the meantime searchable.
 

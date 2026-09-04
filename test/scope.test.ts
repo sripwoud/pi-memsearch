@@ -1,9 +1,16 @@
-import { equal } from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
+import { equal, match, ok } from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { deriveCollection, resolveProjectScope, resolveRepositoryDir } from '../src/scope.ts'
+import {
+  deriveCollection,
+  resolveCollection,
+  resolveProjectScope,
+  resolveRepositoryDir,
+  STORE_CMD_ENV,
+} from '../src/scope.ts'
+import { answeringStore, storeCommand } from './harness.ts'
 
 // Expected values generated with memsearch's plugins/claude-code/scripts/derive-collection.sh
 const VECTORS: [path: string, collection: string][] = [
@@ -15,7 +22,7 @@ const VECTORS: [path: string, collection: string][] = [
     '/data/a-very-long-project-directory-name-that-exceeds-forty-characters-limit',
     'ms_a_very_long_project_directory_name_that__381b27d3',
   ],
-  ['/home/sripwoud/code/pi-memsearch.3', 'ms_pi_memsearch_3_6f13ec91'],
+  ['/home/user/code/pi-memsearch.3', 'ms_pi_memsearch_3_a1b79a60'],
   ['/tmp/über-app', 'ms_ber_app_c7d538d4'],
 ]
 
@@ -72,4 +79,104 @@ test('repository dir is the git root of a nested directory', () => {
 test('repository dir falls back to the directory itself outside any git repo', () => {
   const base = mkdtempSync(join(tmpdir(), 'scope-'))
   equal(resolveRepositoryDir(base), base)
+})
+
+function messageOf(run: () => unknown): string {
+  try {
+    run()
+  } catch (error) {
+    return (error as Error).message
+  }
+  return 'no error was thrown'
+}
+
+function gitDir(): string {
+  const root = mkdtempSync(join(tmpdir(), 'scope-'))
+  mkdirSync(join(root, '.git'))
+  return root
+}
+
+function worktreeDir(): string {
+  const root = mkdtempSync(join(tmpdir(), 'scope-'))
+  writeFileSync(join(root, '.git'), 'gitdir: /elsewhere\n')
+  return root
+}
+
+test('the store command owns the memory dir and the collection, whatever the directory is', () => {
+  const command = answeringStore('/central/my-app/memory', 'ms_my_app_62c1f414')
+
+  for (const dir of [gitDir(), worktreeDir(), mkdtempSync(join(tmpdir(), 'scope-'))]) {
+    const env = { [STORE_CMD_ENV]: command }
+    const scope = resolveProjectScope({ baseDir: dir, env })
+    equal(scope.memoryDir, '/central/my-app/memory')
+    equal(scope.dir, '/central/my-app')
+    equal(resolveCollection({ baseDir: dir, env }), 'ms_my_app_62c1f414')
+  }
+})
+
+test('the store command wins over MEMSEARCH_DIR', () => {
+  const command = answeringStore('/central/my-app/memory', 'ms_my_app_62c1f414')
+  const env = { MEMSEARCH_DIR: '/shared/memsearch', [STORE_CMD_ENV]: command }
+
+  const scope = resolveProjectScope({ baseDir: gitDir(), env })
+
+  equal(scope.memoryDir, '/central/my-app/memory')
+})
+
+test('the store command runs with the working directory set to the directory being resolved', () => {
+  const command = storeCommand('echo "$(pwd -P)/$1"')
+  const dir = gitDir()
+
+  const scope = resolveProjectScope({ baseDir: dir, env: { [STORE_CMD_ENV]: command } })
+
+  equal(scope.memoryDir, join(realpathSync(dir), 'memory-dir'))
+})
+
+test('a non-zero exit from the store command names the command, the mode and the stderr', () => {
+  const command = storeCommand('echo "no store for you" >&2\nexit 3')
+
+  const message = messageOf(() => resolveProjectScope({ baseDir: gitDir(), env: { [STORE_CMD_ENV]: command } }))
+
+  ok(message.includes(STORE_CMD_ENV) && message.includes(command) && message.includes('memory-dir'))
+  match(message, /exited 3: no store for you/)
+})
+
+test('empty output from the store command is an error, not an empty scope', () => {
+  const command = storeCommand('exit 0')
+
+  const message = messageOf(() => resolveCollection({ baseDir: gitDir(), env: { [STORE_CMD_ENV]: command } }))
+
+  ok(message.includes(command) && message.includes('collection'))
+  match(message, /printed nothing/)
+})
+
+test('a relative memory dir from the store command is an error, not resolved against the cwd', () => {
+  const command = answeringStore('central/my-app/memory', 'ms_my_app_62c1f414')
+
+  const message = messageOf(() => resolveProjectScope({ baseDir: gitDir(), env: { [STORE_CMD_ENV]: command } }))
+
+  match(message, /must print an absolute path, got "central\/my-app\/memory"/)
+})
+
+test('a store command that cannot be run names itself in the failure', () => {
+  const command = join(mkdtempSync(join(tmpdir(), 'store-cmd-')), 'missing-resolver')
+
+  const message = messageOf(() => resolveProjectScope({ baseDir: gitDir(), env: { [STORE_CMD_ENV]: command } }))
+
+  ok(message.includes(command))
+  match(message, /failed to run/)
+})
+
+test('the store command runs once per mode and directory for the life of the process', () => {
+  const log = join(mkdtempSync(join(tmpdir(), 'store-log-')), 'runs')
+  const command = storeCommand(`echo "$1" >> '${log}'\necho ms_my_app_62c1f414`)
+  const dir = gitDir()
+  const env = { [STORE_CMD_ENV]: command }
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    resolveCollection({ baseDir: dir, env })
+    resolveCollection({ baseDir: join(dir, '.'), env })
+  }
+
+  equal(readFileSync(log, 'utf8').trim().split('\n').length, 1)
 })

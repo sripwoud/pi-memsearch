@@ -1,14 +1,14 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { deepEqual, equal, ok, rejects } from 'node:assert/strict'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { test } from 'node:test'
 import type { SearchHit } from '../src/contract.ts'
 import type { ExecResult } from '../src/exec.ts'
 import { deriveCollection } from '../src/scope.ts'
 import { COMPACT_STDOUT, errResult, MISSING_COLLECTION_STDERR, okResult, VERSION_STDOUT } from './fixtures.ts'
-import { createFakeContext, type FakeExecStep, setupExtension, TEST_SESSION } from './harness.ts'
+import { createFakeContext, type FakeExecStep, setupExtension, storeCommand, TEST_SESSION } from './harness.ts'
 
 function setup(steps: FakeExecStep[], options: { env?: NodeJS.ProcessEnv } = {}) {
   const { calls, ctx, root, tools } = setupExtension(steps, { ...options, prefix: 'cross-repo-' })
@@ -28,9 +28,9 @@ async function search(
   return first.text
 }
 
-function seedScanRoot(projects: string[]): string {
+function seedScanRoot(projects: string[], store: string[] = ['.memsearch', 'memory']): string {
   const scanRoot = mkdtempSync(join(tmpdir(), 'cross-repo-scan-'))
-  for (const name of projects) mkdirSync(join(scanRoot, name, '.memsearch', 'memory'), { recursive: true })
+  for (const name of projects) mkdirSync(join(scanRoot, name, ...store), { recursive: true })
   mkdirSync(join(scanRoot, 'not-a-project'))
   return scanRoot
 }
@@ -286,4 +286,39 @@ test('a cross-repo search queued behind memory compaction still gets one queued 
     ['waiting on memory compaction'],
     'exactly one queued note across the whole fan-out',
   )
+})
+
+test('a project whose store sits at <dir>/memory is discovered like a repo-local one', async () => {
+  const scanRoot = seedScanRoot(['alpha'], ['memory'])
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult('[]'), okResult('[]')],
+    { env: { PI_MEMSEARCH_SCAN_ROOTS: scanRoot } },
+  )
+
+  await search(tool, ctx, { query: 'redis', scope: 'all' })
+
+  equal(calls.length, 3)
+  equal(calls[2]?.args.at(-3), deriveCollection(join(scanRoot, 'alpha')))
+})
+
+test('the store command derives every fan-out collection, once per target directory', async () => {
+  const scanRoot = seedScanRoot(['alpha', 'beta'], ['memory'])
+  const central = mkdtempSync(join(tmpdir(), 'cross-repo-central-'))
+  const log = join(mkdtempSync(join(tmpdir(), 'cross-repo-log-')), 'runs')
+  // Answers keyed on the session directory, and a store whose own basename differs from it: a
+  // resolver asked inside the store instead of the project would answer ms_<project>-store.
+  const command = storeCommand(
+    `echo "$1" >> '${log}'\ncase "$1" in\n  memory-dir) echo '${central}'/"$(basename "$(pwd -P)")-store/memory" ;;\n  collection) echo "ms_$(basename "$(pwd -P)")" ;;\nesac`,
+  )
+  const { calls, ctx, root, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult('[]'), okResult('[]'), okResult('[]')],
+    { env: { PI_MEMSEARCH_SCAN_ROOTS: scanRoot, PI_MEMSEARCH_STORE_CMD: command } },
+  )
+  mkdirSync(join(central, `${basename(root)}-store`), { recursive: true })
+
+  await search(tool, ctx, { query: 'redis', scope: 'all' })
+
+  deepEqual(calls.slice(1).map((call) => call.args.at(-3)), [`ms_${basename(root)}`, 'ms_alpha', 'ms_beta'])
+  const modes = readFileSync(log, 'utf8').trim().split('\n')
+  equal(modes.filter((mode) => mode === 'collection').length, 3, 'one collection lookup per target project')
 })
