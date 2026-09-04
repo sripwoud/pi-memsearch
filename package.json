@@ -1,6 +1,6 @@
 {
   "name": "pi-memsearch",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Long-term memory for pi — semantic recall over a memsearch store shared with Claude Code, Codex and OpenCode",
   "keywords": [
     "pi-package",
