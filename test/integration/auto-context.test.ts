@@ -3,7 +3,7 @@ import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { MEMSEARCH_SPEC } from '../../src/contract.ts'
 import { execProcess } from '../../src/exec.ts'
-import { readIndexState } from '../../src/index-state.ts'
+import { indexStatePath, readIndexState } from '../../src/index-state.ts'
 import { spawnSidecarProcess } from '../../src/sidecar.ts'
 import { assistantEntry, findInjectedMessage, type InjectedMessage, userEntry } from '../harness.ts'
 import { setupLive, SKIP_UNLESS_GATED } from './live.ts'
@@ -54,7 +54,7 @@ describe('auto-context against real memsearch', { skip: SKIP_UNLESS_GATED }, () 
     await live.settle()
     await live.fire('session_shutdown')
 
-    const state = readIndexState(live.memoryDir)
+    const state = readIndexState(indexStatePath(live.memoryDir, { baseDir: live.root, env: process.env }))
     equal(state?.status, 'ok')
   })
 

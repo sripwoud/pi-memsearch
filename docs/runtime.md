@@ -26,7 +26,7 @@ Registrations live in `src/extension.ts`, except capture (`src/capture.ts`).
 
 **Collection** name is `ms_<sanitized-basename>_<8 hex of sha256(abs path)>`, memsearch's derivation (`src/scope.ts`), so pi searches the same collection every other mesh agent builds. It hashes the absolute path: moving a repo yields a new collection, and the next `session_start` catch-up indexes into it.
 
-**Store command**, opt-in via `PI_MEMSEARCH_STORE_CMD`, takes over both derivations so pi can join a store outside the repos. `<cmd> memory-dir` prints the absolute store directory, `<cmd> collection` the collection name; both run with the working directory set to the directory being resolved. It outranks `MEMSEARCH_DIR`. A non-zero exit, empty output, or a relative store path raises an error naming the command and the mode — there is no fallback, because a wrong store means memory written to the wrong place. Answers are memoized per command, mode and directory for the life of the process, so capture, the indexer, every tool call, cross-repo fan-out and auto-context share one subprocess per directory. Point it at a leaf `memory` directory: index state resolves beside the store, so `<project>/memory` puts state at `<project>/.index-state.json`, while a directory holding day files directly makes siblings collide over one state file. Cross-repo fan-out asks it about each discovered project directory, which is a store directory rather than a session directory, so a resolver has to answer for a store it is standing in. The current project is exempt: its leg of the fan-out reuses the collection already resolved for the session, at the session's own directory. Rationale and rejected alternatives: [ADR 0007](adr/0007-delegated-store-resolution.md).
+**Store command**, opt-in via `PI_MEMSEARCH_STORE_CMD`, takes over both derivations so pi can join a store outside the repos. `<cmd> memory-dir` prints the absolute store directory, `<cmd> collection` the collection name; both run with the working directory set to the directory being resolved. It outranks `MEMSEARCH_DIR`. A non-zero exit, empty output, or a relative store path raises an error naming the command and the mode — there is no fallback, because a wrong store means memory written to the wrong place. Answers are memoized per command, mode and directory for the life of the process, so capture, the indexer, every tool call, cross-repo fan-out and auto-context share one subprocess per directory. A store that is not itself named `memory` is fine everywhere except `memory_compact`, which refuses on one (see Memory compaction). Cross-repo fan-out asks it about each discovered project directory, which is a store directory rather than a session directory, so a resolver has to answer for a store it is standing in. The current project is exempt: its leg of the fan-out reuses the collection already resolved for the session, at the session's own directory. Rationale and rejected alternatives: [ADR 0007](adr/0007-delegated-store-resolution.md).
 
 **Entry shape** in a daily memory file:
 
@@ -92,6 +92,7 @@ An LLM condenses the whole memory store and appends the summary to today's daily
 - Requires `llm.provider` and its API key in memsearch's config, and spends that provider's budget — so the model calls it only on explicit request.
 - Returns the full markdown summary, or a plain "nothing to compact" when the collection has no chunks.
 - Does not refresh the stable snapshot, same as a mid-session `memory_write`.
+- Refuses on a store directory not named `memory`, naming it, and spends nothing. memsearch appends to `<output dir>/memory/<date>.md`, so a store like `<store-root>/<project>` would put the summary in `<store-root>/memory/`, shared with every sibling project and outside the store it summarizes ([#77](https://github.com/sripwoud/pi-memsearch/issues/77)).
 - Lands as memsearch's own `## Memory Compact` block, outside pi's entry shape. `memory_forget` with a `chunk_hash` from inside it redacts the whole block; a later `memory_compact` regenerates a fresh summary ([#41](https://github.com/sripwoud/pi-memsearch/issues/41)).
 
 Not pi's context compaction — the live conversation is untouched. The two senses are kept distinct throughout ([`../CONTEXT.md`](../CONTEXT.md)).
@@ -148,6 +149,7 @@ Milvus Lite allows a single client at a time, so every memsearch invocation goes
 - Writes schedule an index `INDEX_DEBOUNCE_MS` (5 s) later, so a burst of captures costs one index.
 - `session_shutdown` flushes the pending capture and settles the indexer, racing `SHUTDOWN_CAP_MS` (15 s).
 - `memsearch watch` is never used: pi owns the indexing schedule, and a watcher would fight the queue for the lock.
+- Index state is read from `$MEMSEARCH_DIR/.index-state.json` when that variable is set — memsearch's own state-dir override, and where its child writes the file — else from `.index-state.json` beside the store. `memory_status` prints the path it read, so the two are told apart.
 
 ## Degradation
 
@@ -161,6 +163,8 @@ A missing `uv` or memsearch never breaks a session:
 | Auto-context                                       | No injection; the prompt proceeds                                         |
 
 The store command is the deliberate exception: when it is set and fails, resolution raises instead of degrading, because a silent fallback would write memory to the wrong store.
+
+`memory_compact` on a store directory not named `memory` is the other refusal: it raises naming the store and writes nothing, rather than degrading to a summary in the wrong directory.
 
 Availability is re-probed with a short negative cache, so installing `uv` mid-session is picked up without a restart. Once the backend is back, the next index makes everything written in the meantime searchable.
 

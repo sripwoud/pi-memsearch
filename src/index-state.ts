@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import type { ScopeOptions } from './scope.ts'
 
 export interface IndexFailure {
   error: string
@@ -13,12 +14,12 @@ export interface IndexState {
   status: string
 }
 
-export function indexStatePath(memoryDir: string): string {
-  return join(dirname(memoryDir), '.index-state.json')
+export function indexStatePath(memoryDir: string, { baseDir, env = process.env }: ScopeOptions): string {
+  const override = env['MEMSEARCH_DIR']
+  return join(override ? resolve(baseDir, override) : dirname(memoryDir), '.index-state.json')
 }
 
-export function readIndexState(memoryDir: string): IndexState | undefined {
-  const path = indexStatePath(memoryDir)
+export function readIndexState(path: string): IndexState | undefined {
   if (!existsSync(path)) return undefined
   const record = asRecord(parseJson(readFileSync(path, 'utf8')), 'state')
   if (record['schema_version'] !== 1) throw driftError(`unsupported schema_version ${String(record['schema_version'])}`)

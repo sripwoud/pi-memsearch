@@ -142,6 +142,36 @@ test('without an index-state file the index health reads as unrecorded', async (
   ok(text.includes('index: no state recorded yet'))
 })
 
+test('the reported index-state path is the one beside the store', async () => {
+  const { ctx, root, tool } = setup([
+    okResult(VERSION_STDOUT),
+    okResult(STATS_STDOUT),
+    okResult(SKILLS_STATUS_NONE_STDOUT),
+  ])
+
+  const text = await status(tool, ctx)
+
+  ok(text.includes(`index state: ${join(root, '.memsearch', '.index-state.json')}`))
+})
+
+test('MEMSEARCH_DIR holds the index state even when the store command answers elsewhere', async () => {
+  const central = mkdtempSync(join(tmpdir(), 'memory-status-central-'))
+  const stateDir = mkdtempSync(join(tmpdir(), 'memory-status-state-'))
+  const { ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
+    { env: { MEMSEARCH_DIR: stateDir, PI_MEMSEARCH_STORE_CMD: answeringStore(join(central, 'pi'), 'ms_pi_deadbeef') } },
+  )
+  writeFileSync(
+    join(stateDir, '.index-state.json'),
+    JSON.stringify({ failed_files: [], last_completed_at: '2026-08-14T07:00:05Z', schema_version: 1, status: 'ok' }),
+  )
+
+  const text = await status(tool, ctx)
+
+  ok(text.includes(`index state: ${join(stateDir, '.index-state.json')}`))
+  ok(text.includes('index: ok (last indexed 2026-08-14T07:00:05Z)'))
+})
+
 test('an ok index state reports the last completed run', async () => {
   const { ctx, root, tool } = setup([
     okResult(VERSION_STDOUT),

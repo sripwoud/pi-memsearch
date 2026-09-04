@@ -1,6 +1,7 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { deepEqual, equal, match, ok, rejects, throws } from 'node:assert/strict'
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { ExecResult } from '../src/exec.ts'
@@ -20,7 +21,14 @@ import {
   UVX_PREFIX,
   VERSION_STDOUT,
 } from './fixtures.ts'
-import { createFakePi, type FakeExecStep, prompt, type RecordedCall, setupExtension } from './harness.ts'
+import {
+  answeringStore,
+  createFakePi,
+  type FakeExecStep,
+  prompt,
+  type RecordedCall,
+  setupExtension,
+} from './harness.ts'
 
 function setup(steps: FakeExecStep[], options: { env?: NodeJS.ProcessEnv } = {}) {
   const { calls, ctx, fire, root, sleeps, tools } = setupExtension(steps, { ...options, prefix: 'memory-compact-' })
@@ -54,6 +62,20 @@ test('takes no parameters and runs memory compaction over the whole project coll
   ok(first?.type === 'text')
   equal(first.text, COMPACT_SUMMARY)
   deepEqual(result.details, { collection: deriveCollection(root) })
+})
+
+test('a store that is not a leaf memory directory refuses to compact and spends nothing', async () => {
+  const store = join(mkdtempSync(join(tmpdir(), 'memory-compact-central-')), 'pi-memsearch')
+  const { calls, ctx, tool } = setup([], {
+    env: { PI_MEMSEARCH_STORE_CMD: answeringStore(store, 'ms_pi_memsearch_deadbeef') },
+  })
+
+  await rejects(
+    () => compact(tool, ctx),
+    new RegExp(`memory_compact needs a store directory named "memory".*${store}`, 's'),
+  )
+
+  deepEqual(calls, [])
 })
 
 test('an empty collection reports nothing to compact instead of failing', async () => {
