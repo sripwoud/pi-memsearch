@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { describe, test } from 'node:test'
 import { MEMSEARCH_SPEC } from '../../src/contract.ts'
-import { readIndexState } from '../../src/index-state.ts'
+import { indexStatePath, readIndexState } from '../../src/index-state.ts'
 import { assistantEntry, setEnvVar, TEST_SESSION, userEntry } from '../harness.ts'
 import { setupLive, SKIP_UNLESS_GATED } from './live.ts'
 
@@ -53,7 +53,7 @@ describe('capture to recall against real memsearch', { skip: SKIP_UNLESS_GATED }
   test('shutdown indexes the memory store without partial failures', async () => {
     await live.fire('session_shutdown')
 
-    const state = readIndexState(live.memoryDir)
+    const state = readIndexState(indexStatePath(live.memoryDir, { baseDir: live.root, env: process.env }))
     ok(state, 'memsearch wrote an index-state file')
     equal(state.status, 'ok')
     equal(state.failedFiles.length, 0)

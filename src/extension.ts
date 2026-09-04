@@ -1,6 +1,6 @@
 import type { AgentToolUpdateCallback, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { Type } from 'typebox'
 import { AUTO_CONTEXT_ENV, type AutoContextStatus, createAutoContext } from './auto-context.ts'
 import { type Backend, BackendUnavailableError, type CommandOptions, createBackend } from './backend.ts'
@@ -9,7 +9,7 @@ import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from 
 import { type ExpandedSection, formatHitBlock, MEMSEARCH_SPEC, type SearchHit, type SkillsStatus } from './contract.ts'
 import { type CrossRepoResult, discoverProjects, resolveScanRoots, searchAcrossProjects } from './cross-repo.ts'
 import { type ExecFn, execProcess } from './exec.ts'
-import { type IndexState, readIndexState } from './index-state.ts'
+import { type IndexState, indexStatePath, readIndexState } from './index-state.ts'
 import { createIndexTriggers, SHUTDOWN_CAP_MS } from './indexer.ts'
 import { appendMemoryEntry, dailyFilePathForKey, localDateKey } from './memory-file.ts'
 import {
@@ -21,7 +21,13 @@ import {
   removeCompactBlock,
   removeEntry,
 } from './redaction.ts'
-import { type ProjectScope, resolveCollection, resolveProjectScope, resolveRepositoryDir } from './scope.ts'
+import {
+  type ProjectScope,
+  resolveCollection,
+  resolveProjectScope,
+  resolveRepositoryDir,
+  type ScopeOptions,
+} from './scope.ts'
 import { type SpawnSidecarFn, spawnSidecarProcess } from './sidecar.ts'
 import { buildSnapshot } from './snapshot.ts'
 import { DEFAULT_CONTEXT, DEFAULT_LIMIT, renderTranscript } from './transcript.ts'
@@ -357,7 +363,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           `collection: ${collection}`,
           describeBootstrap(bootstrapState),
         )
-        lines.push(...describeIndexHealth(scope.memoryDir))
+        lines.push(...describeIndexHealth(scope.memoryDir, { baseDir: ctx.cwd, env }))
         const failure = indexer.lastFailure()
         if (failure !== undefined) lines.push(`last index run: failed (${failure})`)
         if (availability.available) {
@@ -383,9 +389,10 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         "Run memsearch memory compaction: an LLM condenses the shared project memory store and appends the summary to today's daily memory file, which is then re-indexed. This is not pi context compaction — the live conversation is untouched. It spends the user's configured LLM budget, so call it only when the user explicitly asks to compact memory.",
       execute: async (_toolCallId, _params, signal, onUpdate, ctx) => {
         const { collection, options, scope } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
+        const outputDir = compactOutputDir(scope.memoryDir)
         return orInstallInstructions(async () => {
           await bootstrap.ensure(scope.dir)
-          const summary = await backend.compact(dirname(scope.memoryDir), collection, options)
+          const summary = await backend.compact(outputDir, collection, options)
           const text = summary ?? 'Nothing to compact: the collection has no indexed chunks.'
           return { content: [{ text, type: 'text' as const }], details: { collection } }
         })
@@ -567,15 +574,27 @@ function formatSection(section: ExpandedSection): string {
   return lines.join('\n')
 }
 
-function describeIndexHealth(memoryDir: string): string[] {
+function compactOutputDir(memoryDir: string): string {
+  if (basename(memoryDir) !== 'memory') {
+    throw new Error(
+      'memory_compact needs a store directory named "memory": memsearch appends the summary to '
+        + `<output dir>/memory/<date>.md, which for the store ${memoryDir} would land outside it.`,
+    )
+  }
+  return dirname(memoryDir)
+}
+
+function describeIndexHealth(memoryDir: string, options: ScopeOptions): string[] {
+  const path = indexStatePath(memoryDir, options)
+  const lines = [`index state: ${path}`]
   let state: IndexState | undefined
   try {
-    state = readIndexState(memoryDir)
+    state = readIndexState(path)
   } catch (error) {
-    return [`index: state unreadable (${error instanceof Error ? error.message : String(error)})`]
+    return [...lines, `index: state unreadable (${error instanceof Error ? error.message : String(error)})`]
   }
-  if (!state) return ['index: no state recorded yet']
-  const lines = [describeIndexStatus(state)]
+  if (!state) return [...lines, 'index: no state recorded yet']
+  lines.push(describeIndexStatus(state))
   for (const failure of state.failedFiles) lines.push(`  failed: ${failure.path} (${failure.error})`)
   return lines
 }
