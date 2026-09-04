@@ -40,6 +40,10 @@ The integration suite in `test/integration/` runs against real memsearch and is 
 
 Releases go through release-please: a conventional-commit type on `master` opens the release PR.
 
+Merging that PR cuts the GitHub release **as a draft** and tags the commit. `npm publish` runs next, and only on success does the workflow flip the draft to published. A failed publish therefore leaves no release announcing a version npm does not have.
+
+A release left as a draft means `npm publish` failed. Fix the cause, then re-run the failed jobs of that run (`gh run rerun <id> --failed`) — a fresh run will not re-cut a release whose draft already exists. If npm already has the version, flip the draft by hand: `gh release edit vX.Y.Z --draft=false --latest`.
+
 Before cutting one:
 
 1. `mise run check`
