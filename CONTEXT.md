@@ -29,16 +29,20 @@ The set of agents sharing one project's memory store and index through identical
 The directory identity that keys a project's memory and collection: the store command if set, else `$MEMSEARCH_DIR`, else git root, else cwd — memsearch's own resolution order, mirrored exactly, behind an opt-in seam. A relative `$MEMSEARCH_DIR` resolves at the repository directory, the base every memsearch child resolves it at.
 
 **Store command**:
-The external command named by `$PI_MEMSEARCH_STORE_CMD` that owns store-path and collection derivation when set. Opt-in; unset is the mesh default. It holds the routing policy the package deliberately does not.
+The external command named by `$PI_MEMSEARCH_STORE_CMD` that owns store-path and collection derivation when set, and the index-state directory when it answers that mode. Opt-in; unset is the mesh default. It holds the routing policy the package deliberately does not.
 _Avoid_: store resolver hook, store root
 
 **Repository directory**:
-The working directory every memsearch child process runs at — the git root of the session's directory, else that directory — so a project `.memsearch.toml` layers as it would for a CLI run at the repo root. Coincides with the project scope except when `$MEMSEARCH_DIR` or the store command is set; even then children run here, and only the store and collection follow the override.
+The working directory every memsearch child process runs at — the git root of the session's directory, else that directory — so a project `.memsearch.toml` layers as it would for a CLI run at the repo root. Coincides with the project scope except when `$MEMSEARCH_DIR` or the store command is set; even then children run here, and only the store, the collection and the index-state directory follow the override.
 _Avoid_: repo root, git root, project directory, project root
 
 **Collection**:
 The per-project vector index derived from the memory store, named `ms_<name>_<hash>` by memsearch's derivation. Rebuildable at any time; never the source of truth.
 _Avoid_: database, index (when the derived Milvus collection is meant)
+
+**Index-state directory**:
+The directory holding `.index-state.json`, the file memsearch's indexer writes and `memory_status` reads for index health. The store command's `state-dir` answer when it gives one, else `$MEMSEARCH_DIR`, else the store's parent. Not part of the memory store: a central deployment keeps it outside, so backups stay markdown-only.
+_Avoid_: state dir (unqualified), index directory
 
 **Capture**:
 Producing memory entries from live session activity, by any write path.

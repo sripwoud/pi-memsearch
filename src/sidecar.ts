@@ -3,6 +3,7 @@ import { pythonChildEnv } from './contract.ts'
 
 export interface SidecarSpawnOptions {
   cwd: string
+  env?: NodeJS.ProcessEnv
 }
 
 export interface SidecarProcess {
@@ -18,7 +19,7 @@ export type SpawnSidecarFn = (command: string, args: string[], options: SidecarS
 export const spawnSidecarProcess: SpawnSidecarFn = (command, args, options) => {
   const child = spawn(command, args, {
     cwd: options.cwd,
-    env: pythonChildEnv(),
+    env: { ...pythonChildEnv(), ...options.env },
     killSignal: 'SIGTERM',
     stdio: ['pipe', 'pipe', 'ignore'],
   })

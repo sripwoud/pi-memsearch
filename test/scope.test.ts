@@ -8,6 +8,7 @@ import {
   resolveCollection,
   resolveProjectScope,
   resolveRepositoryDir,
+  resolveStateDir,
   STORE_CMD_ENV,
 } from '../src/scope.ts'
 import { answeringStore, storeCommand } from './harness.ts'
@@ -188,6 +189,54 @@ test('the store command runs once per mode and directory for the life of the pro
   for (let attempt = 0; attempt < 3; attempt++) {
     resolveCollection({ baseDir: dir, env })
     resolveCollection({ baseDir: join(dir, '.'), env })
+  }
+
+  equal(readFileSync(log, 'utf8').trim().split('\n').length, 1)
+})
+
+test('the store command owns the index-state dir when it answers state-dir', () => {
+  const command = answeringStore('/central/my-app', 'ms_my_app_62c1f414', '/state/ms_my_app_62c1f414')
+  const env = { MEMSEARCH_DIR: '/shared/memsearch', [STORE_CMD_ENV]: command }
+
+  equal(resolveStateDir({ baseDir: gitDir(), env }), '/state/ms_my_app_62c1f414')
+})
+
+test('a store command that does not implement state-dir yields no answer, not an error', () => {
+  const command = answeringStore('/central/my-app', 'ms_my_app_62c1f414')
+
+  equal(resolveStateDir({ baseDir: gitDir(), env: { [STORE_CMD_ENV]: command } }), undefined)
+})
+
+test('no store command means no delegated state dir', () => {
+  equal(resolveStateDir({ baseDir: gitDir(), env: {} }), undefined)
+})
+
+test('a non-zero exit from state-dir fails fast, like memory-dir', () => {
+  const command = storeCommand('echo "no state for you" >&2\nexit 4')
+
+  const message = messageOf(() => resolveStateDir({ baseDir: gitDir(), env: { [STORE_CMD_ENV]: command } }))
+
+  ok(message.includes(STORE_CMD_ENV) && message.includes(command) && message.includes('state-dir'))
+  match(message, /exited 4: no state for you/)
+})
+
+test('a relative state dir from the store command is an error, not resolved against the cwd', () => {
+  const command = answeringStore('/central/my-app', 'ms_my_app_62c1f414', 'state/my-app')
+
+  const message = messageOf(() => resolveStateDir({ baseDir: gitDir(), env: { [STORE_CMD_ENV]: command } }))
+
+  match(message, /must print an absolute path, got "state\/my-app"/)
+})
+
+test('state-dir is asked once per directory for the life of the process', () => {
+  const log = join(mkdtempSync(join(tmpdir(), 'store-log-')), 'runs')
+  const command = storeCommand(`echo "$1" >> '${log}'\ntest "$1" = state-dir && echo /state/my-app`)
+  const dir = gitDir()
+  const env = { [STORE_CMD_ENV]: command }
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    resolveStateDir({ baseDir: dir, env })
+    resolveStateDir({ baseDir: join(dir, '.'), env })
   }
 
   equal(readFileSync(log, 'utf8').trim().split('\n').length, 1)

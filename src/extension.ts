@@ -26,6 +26,7 @@ import {
   resolveCollection,
   resolveProjectScope,
   resolveRepositoryDir,
+  resolveStateDir,
   type ScopeOptions,
 } from './scope.ts'
 import { type SpawnSidecarFn, spawnSidecarProcess } from './sidecar.ts'
@@ -54,8 +55,13 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
 
   return (pi) => {
     let repositoryDir: string | undefined
+    let stateDir: string | undefined
     const execAtRepository: ExecFn = (command, args, options) =>
-      exec(command, args, repositoryDir === undefined ? options : { ...options, cwd: repositoryDir })
+      exec(command, args, {
+        ...options,
+        ...(repositoryDir === undefined ? {} : { cwd: repositoryDir }),
+        ...(stateDir === undefined ? {} : { env: { MEMSEARCH_DIR: stateDir } }),
+      })
     const backend = createBackend({ env, exec: execAtRepository, now, sleep })
     const indexer = createIndexTriggers({ backend, env, sleep })
     let captureAbort = new AbortController()
@@ -81,6 +87,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       repositoryDir = resolveRepositoryDir(ctx.cwd)
       captureAbort = new AbortController()
       toolAbort = new AbortController()
+      stateDir = resolveStateDir({ baseDir: ctx.cwd, env })
       indexer.catchUp(ctx.cwd)
     })
     pi.on('session_shutdown', async () => {
@@ -432,6 +439,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         autoContext.start({
           collection: resolveCollection({ baseDir: ctx.cwd, env }),
           repositoryDir: resolveRepositoryDir(ctx.cwd),
+          stateDir: resolveStateDir({ baseDir: ctx.cwd, env }),
         })
       })
       pi.on('session_shutdown', () => {

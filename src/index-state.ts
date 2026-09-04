@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { resolveRepositoryDir, type ScopeOptions } from './scope.ts'
+import { resolveRepositoryDir, resolveStateDir, type ScopeOptions } from './scope.ts'
 
 export interface IndexFailure {
   error: string
@@ -15,6 +15,8 @@ export interface IndexState {
 }
 
 export function indexStatePath(memoryDir: string, { baseDir, env = process.env }: ScopeOptions): string {
+  const delegated = resolveStateDir({ baseDir, env })
+  if (delegated !== undefined) return join(delegated, '.index-state.json')
   const override = env['MEMSEARCH_DIR']
   if (!override) return join(dirname(memoryDir), '.index-state.json')
   return join(resolve(resolveRepositoryDir(baseDir), override), '.index-state.json')
