@@ -149,7 +149,7 @@ Milvus Lite allows a single client at a time, so every memsearch invocation goes
 - Writes schedule an index `INDEX_DEBOUNCE_MS` (5 s) later, so a burst of captures costs one index.
 - `session_shutdown` flushes the pending capture and settles the indexer, racing `SHUTDOWN_CAP_MS` (15 s).
 - `memsearch watch` is never used: pi owns the indexing schedule, and a watcher would fight the queue for the lock.
-- Index state is read from `$MEMSEARCH_DIR/.index-state.json` when that variable is set — memsearch's own state-dir override, and where its child writes the file — else from `.index-state.json` beside the store. A relative `$MEMSEARCH_DIR` resolves at the repository directory, because that is where the child runs; the store itself still resolves at the session directory, so the two can name different parents. `memory_status` prints the path it read.
+- Index state is read from `$MEMSEARCH_DIR/.index-state.json` when that variable is set — memsearch's own state-dir override, and where its child writes the file — else from `.index-state.json` beside the store. A relative `$MEMSEARCH_DIR` resolves at the repository directory, because that is where the child runs; the store itself still resolves at the session directory, so the two can name different parents. `memory_status` prints the path it read. memsearch writes that file only inside a `.memsearch` tree or at `$MEMSEARCH_DIR`, so a store command answering outside both must export `$MEMSEARCH_DIR` itself or there is no index health to report ([ADR 0007](adr/0007-delegated-store-resolution.md)).
 
 ## Degradation
 
