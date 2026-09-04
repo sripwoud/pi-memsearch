@@ -54,7 +54,9 @@ describe('auto-context against real memsearch', { skip: SKIP_UNLESS_GATED }, () 
     await live.settle()
     await live.fire('session_shutdown')
 
-    const state = readIndexState(indexStatePath(live.memoryDir, { baseDir: live.root, env: process.env }))
+    const statePath = indexStatePath(live.memoryDir, { baseDir: live.root, env: process.env })
+    ok(statePath, 'the live store sits inside a .memsearch tree, so memsearch writes state beside it')
+    const state = readIndexState(statePath)
     equal(state?.status, 'ok')
   })
 

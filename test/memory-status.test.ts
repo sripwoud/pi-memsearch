@@ -1,6 +1,6 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { deepEqual, equal, match, ok, rejects } from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -367,4 +367,66 @@ test('a missing collection reads as zero indexed chunks', async () => {
   const text = await status(tool, ctx)
 
   ok(text.includes('indexed chunks: 0 (collection not created yet)'))
+})
+
+test('a delegated store outside a .memsearch tree says no state file will ever be written', async () => {
+  const central = mkdtempSync(join(tmpdir(), 'memory-status-central-'))
+  const { ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
+    { env: { PI_MEMSEARCH_STORE_CMD: answeringStore(join(central, 'pi'), 'ms_pi_deadbeef') } },
+  )
+
+  const text = await status(tool, ctx)
+
+  ok(text.includes('index: no state file will be written'))
+  ok(text.includes('store is outside a .memsearch tree'))
+  ok(text.includes('the store command declines state-dir'))
+  ok(text.includes('MEMSEARCH_DIR is unset'))
+  ok(text.includes('answer state-dir to restore index health'))
+  ok(!text.includes('index state:'))
+  ok(!text.includes('no state recorded yet'))
+})
+
+test('a state-dir answer restores the path for a store outside any .memsearch tree', async () => {
+  const central = mkdtempSync(join(tmpdir(), 'memory-status-central-'))
+  const stateDir = mkdtempSync(join(tmpdir(), 'memory-status-state-'))
+  const { ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
+    { env: { PI_MEMSEARCH_STORE_CMD: answeringStore(join(central, 'pi'), 'ms_pi_deadbeef', stateDir) } },
+  )
+
+  const text = await status(tool, ctx)
+
+  ok(!text.includes('no state file will be written'))
+  ok(text.includes(`index state: ${join(stateDir, '.index-state.json')}`))
+})
+
+test('a delegated store inside a .memsearch tree still reports the path it read', async () => {
+  const central = mkdtempSync(join(tmpdir(), 'memory-status-central-'))
+  const memoryDir = join(central, '.memsearch', 'pi')
+  const { ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
+    { env: { PI_MEMSEARCH_STORE_CMD: answeringStore(memoryDir, 'ms_pi_deadbeef') } },
+  )
+
+  const text = await status(tool, ctx)
+
+  ok(text.includes(`index state: ${join(central, '.memsearch', '.index-state.json')}`))
+  ok(text.includes('index: no state recorded yet'))
+})
+
+test('a store outside a .memsearch tree reached through a symlink reports normally', async () => {
+  const central = mkdtempSync(join(tmpdir(), 'memory-status-central-'))
+  mkdirSync(join(central, '.memsearch'), { recursive: true })
+  const link = join(central, 'store')
+  symlinkSync(join(central, '.memsearch'), link)
+  const { ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
+    { env: { PI_MEMSEARCH_STORE_CMD: answeringStore(join(link, 'pi'), 'ms_pi_deadbeef') } },
+  )
+
+  const text = await status(tool, ctx)
+
+  ok(!text.includes('no state file will be written'))
+  ok(text.includes('index state:'))
 })
