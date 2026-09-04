@@ -3,6 +3,7 @@ import { pythonChildEnv } from './contract.ts'
 
 export interface ExecOptions {
   cwd?: string
+  env?: NodeJS.ProcessEnv
   signal?: AbortSignal
   timeoutMs: number
 }
@@ -20,7 +21,7 @@ export const execProcess: ExecFn = (command, args, options) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: pythonChildEnv(),
+      env: { ...pythonChildEnv(), ...options.env },
       killSignal: 'SIGTERM',
       signal: options.signal,
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -295,9 +295,10 @@ export function storeCommand(body: string): string {
   return file
 }
 
-export function answeringStore(memoryDir: string, collection: string): string {
+export function answeringStore(memoryDir: string, collection: string, stateDir?: string): string {
+  const state = stateDir === undefined ? '' : `\n  state-dir) echo '${stateDir}' ;;`
   return storeCommand(
-    `case "$1" in\n  memory-dir) echo '${memoryDir}' ;;\n  collection) echo '${collection}' ;;\nesac`,
+    `case "$1" in\n  memory-dir) echo '${memoryDir}' ;;\n  collection) echo '${collection}' ;;${state}\nesac`,
   )
 }
 

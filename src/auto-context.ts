@@ -47,6 +47,7 @@ export interface AutoContextMessage {
 export interface AutoContextTarget {
   collection: string
   repositoryDir: string
+  stateDir: string | undefined
 }
 
 export interface AutoContext {
@@ -86,6 +87,7 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
   let counters = freshCounters()
   let state: SidecarState = 'warming'
   let repositoryDir: string | undefined
+  let stateDir: string | undefined
   let collection = ''
   let session: Session | undefined
   let respawns = 0
@@ -104,6 +106,7 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
     let readyResolve: () => void = () => {}
     const proc = deps.spawnSidecar('uv', ['run', '--no-project', '--with', MEMSEARCH_SPEC, 'python', SIDECAR_SCRIPT], {
       cwd: dir,
+      ...(stateDir === undefined ? {} : { env: { MEMSEARCH_DIR: stateDir } }),
     })
     const current: Session = {
       dead: false,
@@ -221,6 +224,7 @@ export function createAutoContext(deps: AutoContextDeps): AutoContext {
     start(target) {
       if (!enabled) return
       repositoryDir = target.repositoryDir
+      stateDir = target.stateDir
       collection = target.collection
       counters = freshCounters()
       respawns = 0

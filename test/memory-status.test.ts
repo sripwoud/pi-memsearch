@@ -172,6 +172,30 @@ test('MEMSEARCH_DIR holds the index state even when the store command answers el
   ok(text.includes('index: ok (last indexed 2026-08-14T07:00:05Z)'))
 })
 
+test('state-dir from the store command outranks an inherited MEMSEARCH_DIR', async () => {
+  const central = mkdtempSync(join(tmpdir(), 'memory-status-central-'))
+  const inherited = mkdtempSync(join(tmpdir(), 'memory-status-inherited-'))
+  const stateDir = mkdtempSync(join(tmpdir(), 'memory-status-state-'))
+  const { ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
+    {
+      env: {
+        MEMSEARCH_DIR: inherited,
+        PI_MEMSEARCH_STORE_CMD: answeringStore(join(central, 'pi'), 'ms_pi_deadbeef', stateDir),
+      },
+    },
+  )
+  writeFileSync(
+    join(stateDir, '.index-state.json'),
+    JSON.stringify({ failed_files: [], last_completed_at: '2026-08-14T07:00:05Z', schema_version: 1, status: 'ok' }),
+  )
+
+  const text = await status(tool, ctx)
+
+  ok(text.includes(`index state: ${join(stateDir, '.index-state.json')}`))
+  ok(text.includes('index: ok (last indexed 2026-08-14T07:00:05Z)'))
+})
+
 test('MEMSEARCH_DIR holds the index state with no store command in play', async () => {
   const stateDir = mkdtempSync(join(tmpdir(), 'memory-status-state-'))
   const { ctx, tool } = setup(

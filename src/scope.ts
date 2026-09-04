@@ -15,7 +15,7 @@ export interface ScopeOptions {
   env?: NodeJS.ProcessEnv
 }
 
-type StoreMode = 'collection' | 'memory-dir'
+type StoreMode = 'collection' | 'memory-dir' | 'state-dir'
 
 const storeAnswers = new Map<string, string>()
 
@@ -40,6 +40,13 @@ export function resolveCollection({ baseDir, env = process.env }: ScopeOptions):
   return deriveCollection(resolveProjectScope({ baseDir, env }).dir)
 }
 
+export function resolveStateDir({ baseDir, env = process.env }: ScopeOptions): string | undefined {
+  const command = env[STORE_CMD_ENV]
+  if (!command) return undefined
+  const answer = askStoreCommand(command, 'state-dir', resolve(baseDir))
+  return answer === '' ? undefined : answer
+}
+
 function askStoreCommand(command: string, mode: StoreMode, dir: string): string {
   const key = `${command} ${mode} ${dir}`
   const cached = storeAnswers.get(key)
@@ -49,8 +56,8 @@ function askStoreCommand(command: string, mode: StoreMode, dir: string): string 
   if (run.status !== 0)
     throw new Error(`${STORE_CMD_ENV} (${command} ${mode}) exited ${run.status}: ${run.stderr.trim()}`)
   const answer = run.stdout.trim()
-  if (answer === '') throw new Error(`${STORE_CMD_ENV} (${command} ${mode}) printed nothing`)
-  if (mode === 'memory-dir' && !isAbsolute(answer))
+  if (answer === '' && mode !== 'state-dir') throw new Error(`${STORE_CMD_ENV} (${command} ${mode}) printed nothing`)
+  if (answer !== '' && (mode === 'memory-dir' || mode === 'state-dir') && !isAbsolute(answer))
     throw new Error(`${STORE_CMD_ENV} (${command} ${mode}) must print an absolute path, got "${answer}"`)
   storeAnswers.set(key, answer)
   return answer
