@@ -26,7 +26,7 @@ _Avoid_: anchor comment, transcript link
 The set of agents sharing one project's memory store and index through identical memsearch conventions. Parity with the mesh outranks pi-local design preferences.
 
 **Project scope**:
-The directory identity that keys a project's memory and collection: the store command if set, else `$MEMSEARCH_DIR`, else git root, else cwd — memsearch's own resolution order, mirrored exactly, behind an opt-in seam.
+The directory identity that keys a project's memory and collection: the store command if set, else `$MEMSEARCH_DIR`, else git root, else cwd — memsearch's own resolution order, mirrored exactly, behind an opt-in seam. A relative `$MEMSEARCH_DIR` resolves at the repository directory, the base every memsearch child resolves it at.
 
 **Store command**:
 The external command named by `$PI_MEMSEARCH_STORE_CMD` that owns store-path and collection derivation when set. Opt-in; unset is the mesh default. It holds the routing policy the package deliberately does not.

@@ -80,7 +80,7 @@ Markdown is the source of truth; the collection is derived and rebuildable at an
 
 - **Location**: `<project>/.memsearch/memory/YYYY-MM-DD.md` — one daily memory file per calendar day, appended to by every agent in the mesh.
 - **Git**: commit `.memsearch/` to share memory with collaborators, or gitignore it to keep it personal — the collection lives in `~/.memsearch/milvus.db` either way, so the choice costs nothing.
-- **Scope**: `$MEMSEARCH_DIR`, else the git root, else the working directory — memsearch's own resolution order. To put the store somewhere else entirely, `$PI_MEMSEARCH_STORE_CMD` hands both the store path and the collection name to a command of your own ([ADR 0007](docs/adr/0007-delegated-store-resolution.md)).
+- **Scope**: `$MEMSEARCH_DIR`, else the git root, else the working directory — memsearch's own resolution order. A relative `$MEMSEARCH_DIR` resolves where memsearch's own children run — the git root, else the directory pi started in — so a session in a subdirectory shares one store with the CLI rather than writing beside it. A store left at a subdirectory path by an older pi-memsearch is not migrated. To put the store somewhere else entirely, `$PI_MEMSEARCH_STORE_CMD` hands both the store path and the collection name to a command of your own ([ADR 0007](docs/adr/0007-delegated-store-resolution.md)).
 
 Collection naming, the entry shape, and the session anchor that lets any memory entry trace back to the conversation that produced it: [`docs/runtime.md`](docs/runtime.md).
 
@@ -110,7 +110,7 @@ Everything shared with the mesh — provider, model, chunking — lives in memse
 | `PI_MEMSEARCH_COMPACT_TIMEOUT_MS` | `300000`                               | Per-attempt timeout for `memory_compact` (LLM pass plus reindex)                                                                                 |
 | `PI_MEMSEARCH_SCAN_ROOTS`         | unset                                  | `:`-separated directory roots scanned for other projects' memory stores; required by cross-repo recall                                           |
 | `PI_MEMSEARCH_STORE_CMD`          | unset                                  | Command printing the store path (`memory-dir`) and collection name (`collection`), run in the directory being resolved; outranks `MEMSEARCH_DIR` |
-| `MEMSEARCH_DIR`                   | unset                                  | memsearch's own scope override; the memory store and collection follow it                                                                        |
+| `MEMSEARCH_DIR`                   | unset                                  | memsearch's own scope override; the memory store and collection follow it. A relative path resolves where the memsearch children run             |
 
 Auto-context races a 300 ms hard cap and costs ~0.7–1.0 GB resident memory while on. A deadline miss, an empty result or a locked store all degrade to no injection, so a prompt never waits on memory; remote embedding providers will often miss the cap. Every tunable, and how the sidecar borrows the Milvus lock per prompt: [`docs/runtime.md`](docs/runtime.md#auto-context).
 

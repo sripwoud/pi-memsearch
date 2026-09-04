@@ -42,3 +42,24 @@ test('MEMSEARCH_DIR moves the collection but children still run at the repositor
   equal(harness.calls.length, 2)
   for (const call of harness.calls) equal(call.options.cwd, harness.root)
 })
+
+test('a relative MEMSEARCH_DIR resolves at the repository, not the session subdirectory', async () => {
+  const harness = setupExtension([okResult(VERSION_STDOUT), okResult(SEARCH_JSON)], {
+    env: { MEMSEARCH_DIR: '.memsearch' },
+    prefix: 'repository-dir-',
+  })
+  const nested = join(harness.root, 'packages', 'core')
+  mkdirSync(nested, { recursive: true })
+  const ctx = createFakeContext({ cwd: nested, session: TEST_SESSION })
+
+  await harness.fire('session_start', {}, ctx)
+  await search(harness, ctx)
+
+  const searchCall = harness.calls.find((call) => call.args.includes('search'))
+  ok(searchCall, 'a search command ran')
+  ok(
+    searchCall.args.includes(deriveCollection(join(harness.root, '.memsearch'))),
+    'collection derives from the override resolved at the repository',
+  )
+  for (const call of harness.calls) equal(call.options.cwd, harness.root)
+})
