@@ -45,7 +45,7 @@ memsearch already integrates Claude Code, OpenClaw, OpenCode and Codex CLI, all 
 
 ## Install
 
-Current release: [1.3.0](CHANGELOG.md). <!-- x-release-please-version -->
+Current release: [1.4.0](CHANGELOG.md). <!-- x-release-please-version -->
 
 Prerequisites: [uv](https://docs.astral.sh/uv/) (the only external dependency — memsearch runs through `uvx`, so there is no Python packaging to manage), pi >= 0.84.1 (0.84.x is the tested line), Node >= 22.19.
 

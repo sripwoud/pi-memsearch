@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.0](https://github.com/sripwoud/pi-memsearch/compare/v1.3.0...v1.4.0) (2026-09-04)
+
+
+### Features
+
+* **scope:** let the store command name the index-state directory ([#97](https://github.com/sripwoud/pi-memsearch/issues/97)) ([0ab73a2](https://github.com/sripwoud/pi-memsearch/commit/0ab73a2103d87ebbd34afa0da9a26ae497767b00)), closes [#89](https://github.com/sripwoud/pi-memsearch/issues/89)
+
+
+### Bug Fixes
+
+* **capture:** answer the session heading from process state ([#94](https://github.com/sripwoud/pi-memsearch/issues/94)) ([e7d50ea](https://github.com/sripwoud/pi-memsearch/commit/e7d50eaae1fd8e58c9eab6ef7b525564f351aa83)), closes [#84](https://github.com/sripwoud/pi-memsearch/issues/84)
+* **cross-repo:** name a discovered project's collection from the project ([#102](https://github.com/sripwoud/pi-memsearch/issues/102)) ([d765f20](https://github.com/sripwoud/pi-memsearch/commit/d765f20ed43921a1cd25725e7a0ce0df870024e5)), closes [#95](https://github.com/sripwoud/pi-memsearch/issues/95)
+* **scope:** resolve a relative MEMSEARCH_DIR at the repository directory ([#96](https://github.com/sripwoud/pi-memsearch/issues/96)) ([28a5f60](https://github.com/sripwoud/pi-memsearch/commit/28a5f6012bf673020e80fca080c07cfd18c6f8a6)), closes [#91](https://github.com/sripwoud/pi-memsearch/issues/91)
+* **scope:** stop deriving index state and compact output from the store's parent ([#86](https://github.com/sripwoud/pi-memsearch/issues/86)) ([1dcc8b6](https://github.com/sripwoud/pi-memsearch/commit/1dcc8b607b733742832b3ca7113d8816f68828f3)), closes [#77](https://github.com/sripwoud/pi-memsearch/issues/77)
+* **status:** say when no index-state file will ever be written ([#98](https://github.com/sripwoud/pi-memsearch/issues/98)) ([c7002d5](https://github.com/sripwoud/pi-memsearch/commit/c7002d5583880afd122fbbc79ca2362ca74a9b2f)), closes [#90](https://github.com/sripwoud/pi-memsearch/issues/90)
+
 ## [1.3.0](https://github.com/sripwoud/pi-memsearch/compare/v1.2.1...v1.3.0) (2026-09-04)
 
 
