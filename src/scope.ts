@@ -35,9 +35,12 @@ export function resolveProjectScope({ baseDir, env = process.env }: ScopeOptions
 }
 
 export function resolveCollection({ baseDir, env = process.env }: ScopeOptions): string {
+  return storeCommandCollection({ baseDir, env }) ?? deriveCollection(resolveProjectScope({ baseDir, env }).dir)
+}
+
+export function storeCommandCollection({ baseDir, env = process.env }: ScopeOptions): string | undefined {
   const command = env[STORE_CMD_ENV]
-  if (command) return askStoreCommand(command, 'collection', resolve(baseDir))
-  return deriveCollection(resolveProjectScope({ baseDir, env }).dir)
+  return command ? askStoreCommand(command, 'collection', resolve(baseDir)) : undefined
 }
 
 export function resolveStateDir({ baseDir, env = process.env }: ScopeOptions): string | undefined {

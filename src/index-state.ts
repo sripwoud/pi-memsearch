@@ -8,6 +8,7 @@ export interface IndexFailure {
 }
 
 export interface IndexState {
+  collection?: string
   failedFiles: IndexFailure[]
   lastCompletedAt?: string
   lastError?: string
@@ -53,6 +54,8 @@ export function readIndexState(path: string): IndexState | undefined {
   const status = record['status']
   if (typeof status !== 'string') throw driftError('field "status" expected a string')
   const state: IndexState = { failedFiles: parseFailedFiles(record['failed_files']), status }
+  const collection = optionalString(record, 'collection')
+  if (collection !== undefined) state.collection = collection
   const lastCompletedAt = optionalString(record, 'last_completed_at')
   if (lastCompletedAt !== undefined) state.lastCompletedAt = lastCompletedAt
   const lastError = optionalString(record, 'last_error')

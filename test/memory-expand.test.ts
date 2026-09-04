@@ -1,6 +1,6 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { deepEqual, equal, match, ok, rejects } from 'node:assert/strict'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { test } from 'node:test'
@@ -135,4 +135,33 @@ test('missing uv returns install instructions instead of an error', async () => 
   const text = await expand(tool, ctx, 'abc')
 
   match(text, /astral\.sh\/uv\/install\.sh/)
+})
+
+test("an origin project's collection ignores the searching session's MEMSEARCH_DIR", async () => {
+  const origin = mkdtempSync(join(tmpdir(), 'expand-origin-'))
+  const central = mkdtempSync(join(tmpdir(), 'expand-central-'))
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(JSON.stringify(EXPAND_RESULT))],
+    { MEMSEARCH_DIR: central },
+  )
+
+  await expand(tool, ctx, EXPAND_RESULT.chunk_hash, origin)
+
+  equal(calls[1]?.args.at(-3), deriveCollection(origin))
+})
+
+test("the session's own project expands through the session scope, not a recorded name", async () => {
+  const central = mkdtempSync(join(tmpdir(), 'expand-central-'))
+  writeFileSync(
+    join(central, '.index-state.json'),
+    JSON.stringify({ collection: 'ms_recorded_elsewhere', schema_version: 1, status: 'ok' }),
+  )
+  const { calls, ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(JSON.stringify(EXPAND_RESULT))],
+    { MEMSEARCH_DIR: central },
+  )
+
+  await expand(tool, ctx, EXPAND_RESULT.chunk_hash, central)
+
+  equal(calls[1]?.args.at(-3), deriveCollection(central), 'search and expansion name the current project alike')
 })

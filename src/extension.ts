@@ -7,7 +7,13 @@ import { type Backend, BackendUnavailableError, type CommandOptions, createBacke
 import { type BootstrapState, createBootstrap, ONNX_DOWNLOAD_NOTICE } from './bootstrap.ts'
 import { type Complete, DEFAULT_DISTILLATION_TIMEOUT_MS, registerCapture } from './capture.ts'
 import { type ExpandedSection, formatHitBlock, MEMSEARCH_SPEC, type SearchHit, type SkillsStatus } from './contract.ts'
-import { type CrossRepoResult, discoverProjects, resolveScanRoots, searchAcrossProjects } from './cross-repo.ts'
+import {
+  type CrossRepoResult,
+  discoverProjects,
+  resolveDiscoveredCollection,
+  resolveScanRoots,
+  searchAcrossProjects,
+} from './cross-repo.ts'
 import { type ExecFn, execProcess } from './exec.ts'
 import { type IndexState, indexStatePath, readIndexState } from './index-state.ts'
 import { createIndexTriggers, SHUTDOWN_CAP_MS } from './indexer.ts'
@@ -22,6 +28,7 @@ import {
   removeEntry,
 } from './redaction.ts'
 import {
+  canonicalize,
   type ProjectScope,
   resolveCollection,
   resolveProjectScope,
@@ -155,7 +162,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       description:
         'Search the shared project memory for past decisions, fixes and context. Returns top-k scored chunks; pass a chunk_hash to memory_expand for the full section.',
       execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
-        const { collection, options, scope } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
+        const { collection, collectionFor, options, scope } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
         const scanRoots = params.scope === 'all' ? resolveScanRoots(env) : undefined
         return orInstallInstructions(async () => {
           await bootstrap.ensure(scope.dir)
@@ -163,7 +170,7 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
           if (scanRoots) {
             const result = await searchAcrossProjects({
               backend,
-              collectionFor: (dir) => (dir === scope.dir ? collection : resolveCollection({ baseDir: dir, env })),
+              collectionFor,
               currentProject: scope.dir,
               onProgress: (done, total) =>
                 onUpdate?.({
@@ -207,10 +214,8 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
       description:
         'Expand a memory chunk (by chunk_hash from memory_search) into its full section, with the session anchor pointing at the original transcript.',
       execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
-        const { collection, options } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
-        const target = params.project
-          ? resolveCollection({ baseDir: resolve(ctx.cwd, params.project), env })
-          : collection
+        const { collection, collectionFor, options } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
+        const target = params.project ? collectionFor(resolve(ctx.cwd, params.project)) : collection
         return orInstallInstructions(async () => {
           const section = await backend.expand(params.chunk_hash, target, options)
           return { content: [{ text: formatSection(section), type: 'text' as const }], details: { section } }
@@ -467,6 +472,7 @@ function createBackgroundQueue(): BackgroundQueue {
 
 interface RecallTarget {
   collection: string
+  collectionFor: (dir: string) => string
   options: CommandOptions
   scope: ProjectScope
 }
@@ -503,7 +509,14 @@ function parseForgetAddress(params: ForgetParams): ForgetAddress {
 
 function resolveTarget(ctx: ExtensionContext, env: NodeJS.ProcessEnv, options: CommandOptions): RecallTarget {
   const scope = resolveProjectScope({ baseDir: ctx.cwd, env })
-  return { collection: resolveCollection({ baseDir: ctx.cwd, env }), options, scope }
+  const collection = resolveCollection({ baseDir: ctx.cwd, env })
+  const own = canonicalize(scope.dir)
+  return {
+    collection,
+    collectionFor: (dir) => canonicalize(dir) === own ? collection : resolveDiscoveredCollection(dir, env),
+    options,
+    scope,
+  }
 }
 
 async function orInstallInstructions<T>(run: () => Promise<T>) {
@@ -556,14 +569,17 @@ function formatHits(hits: SearchHit[]): string {
 }
 
 function formatCrossRepoResult(query: string, result: CrossRepoResult): string {
-  const accounting = `${result.searched.length} projects searched, ${result.skipped.length} skipped`
-  const skippedNote = result.skipped.length === 0
-    ? []
-    : [`skipped (never indexed on this machine): ${result.skipped.join(', ')}`]
-  if (result.hits.length === 0)
-    return [`No memories found for "${query}" across ${accounting}.`, ...skippedNote].join('\n')
+  const collapsedCount = result.collapsed.length === 0 ? '' : `, ${result.collapsed.length} collapsed`
+  const accounting = `${result.searched.length} projects searched, ${result.skipped.length} skipped${collapsedCount}`
+  const notes = [
+    ...(result.skipped.length === 0 ? [] : [`skipped (never indexed on this machine): ${result.skipped.join(', ')}`]),
+    ...(result.collapsed.length === 0
+      ? []
+      : [`collapsed (same collection as a project already searched): ${result.collapsed.join(', ')}`]),
+  ]
+  if (result.hits.length === 0) return [`No memories found for "${query}" across ${accounting}.`, ...notes].join('\n')
   const blocks = result.hits.map((hit, index) => formatHitBlock(hit, index, hit.project))
-  return [`${result.hits.length} memory chunk(s), ${accounting}, best first:`, ...blocks, ...skippedNote].join('\n\n')
+  return [`${result.hits.length} memory chunk(s), ${accounting}, best first:`, ...blocks, ...notes].join('\n\n')
 }
 
 function formatSection(section: ExpandedSection): string {
