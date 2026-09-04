@@ -172,6 +172,37 @@ test('MEMSEARCH_DIR holds the index state even when the store command answers el
   ok(text.includes('index: ok (last indexed 2026-08-14T07:00:05Z)'))
 })
 
+test('MEMSEARCH_DIR holds the index state with no store command in play', async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), 'memory-status-state-'))
+  const { ctx, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
+    { env: { MEMSEARCH_DIR: stateDir } },
+  )
+  writeFileSync(
+    join(stateDir, '.index-state.json'),
+    JSON.stringify({ failed_files: [], schema_version: 1, status: 'ok' }),
+  )
+
+  const text = await status(tool, ctx)
+
+  ok(text.includes(`index state: ${join(stateDir, '.index-state.json')}`))
+  ok(text.includes('index: ok'))
+})
+
+test('a relative MEMSEARCH_DIR resolves at the repository, where the memsearch child writes it', async () => {
+  const { ctx, root, tool } = setup(
+    [okResult(VERSION_STDOUT), okResult(STATS_STDOUT), okResult(SKILLS_STATUS_NONE_STDOUT)],
+    { env: { MEMSEARCH_DIR: '.memsearch' } },
+  )
+  const nested = join(root, 'packages', 'core')
+  mkdirSync(nested, { recursive: true })
+
+  const text = await status(tool, { ...ctx, cwd: nested })
+
+  ok(text.includes(`index state: ${join(root, '.memsearch', '.index-state.json')}`))
+  ok(text.includes(`store: ${join(nested, '.memsearch', 'memory')}`))
+})
+
 test('an ok index state reports the last completed run', async () => {
   const { ctx, root, tool } = setup([
     okResult(VERSION_STDOUT),

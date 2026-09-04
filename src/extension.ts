@@ -389,15 +389,10 @@ export function createMemsearchExtension(deps: Partial<MemsearchDeps> = {}): (pi
         "Run memsearch memory compaction: an LLM condenses the shared project memory store and appends the summary to today's daily memory file, which is then re-indexed. This is not pi context compaction — the live conversation is untouched. It spends the user's configured LLM budget, so call it only when the user explicitly asks to compact memory.",
       execute: async (_toolCallId, _params, signal, onUpdate, ctx) => {
         const { collection, options, scope } = resolveTarget(ctx, env, toolOptions(signal, onUpdate))
-        if (basename(scope.memoryDir) !== 'memory') {
-          throw new Error(
-            'memory_compact needs a store directory named "memory": memsearch appends the summary to '
-              + `<output dir>/memory/<date>.md, which for the store ${scope.memoryDir} would land outside it.`,
-          )
-        }
+        const outputDir = compactOutputDir(scope.memoryDir)
         return orInstallInstructions(async () => {
           await bootstrap.ensure(scope.dir)
-          const summary = await backend.compact(dirname(scope.memoryDir), collection, options)
+          const summary = await backend.compact(outputDir, collection, options)
           const text = summary ?? 'Nothing to compact: the collection has no indexed chunks.'
           return { content: [{ text, type: 'text' as const }], details: { collection } }
         })
@@ -577,6 +572,16 @@ function formatSection(section: ExpandedSection): string {
     )
   }
   return lines.join('\n')
+}
+
+function compactOutputDir(memoryDir: string): string {
+  if (basename(memoryDir) !== 'memory') {
+    throw new Error(
+      'memory_compact needs a store directory named "memory": memsearch appends the summary to '
+        + `<output dir>/memory/<date>.md, which for the store ${memoryDir} would land outside it.`,
+    )
+  }
+  return dirname(memoryDir)
 }
 
 function describeIndexHealth(memoryDir: string, options: ScopeOptions): string[] {

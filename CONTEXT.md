@@ -5,7 +5,7 @@ memsearch-backed long-term memory for pi: a pi package that lets pi write to and
 ## Language
 
 **Memory store**:
-The `.memsearch/memory/` directory of a project — plain markdown, the source of truth for everything remembered.
+The directory of a project holding its daily memory files — `.memsearch/memory/` by default, anywhere a store command answers with. Plain markdown, the source of truth for everything remembered.
 _Avoid_: memory bank, knowledge base
 
 **Daily memory file**:

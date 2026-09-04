@@ -149,7 +149,7 @@ Milvus Lite allows a single client at a time, so every memsearch invocation goes
 - Writes schedule an index `INDEX_DEBOUNCE_MS` (5 s) later, so a burst of captures costs one index.
 - `session_shutdown` flushes the pending capture and settles the indexer, racing `SHUTDOWN_CAP_MS` (15 s).
 - `memsearch watch` is never used: pi owns the indexing schedule, and a watcher would fight the queue for the lock.
-- Index state is read from `$MEMSEARCH_DIR/.index-state.json` when that variable is set — memsearch's own state-dir override, and where its child writes the file — else from `.index-state.json` beside the store. `memory_status` prints the path it read, so the two are told apart.
+- Index state is read from `$MEMSEARCH_DIR/.index-state.json` when that variable is set — memsearch's own state-dir override, and where its child writes the file — else from `.index-state.json` beside the store. A relative `$MEMSEARCH_DIR` resolves at the repository directory, because that is where the child runs; the store itself still resolves at the session directory, so the two can name different parents. `memory_status` prints the path it read.
 
 ## Degradation
 
@@ -164,7 +164,7 @@ A missing `uv` or memsearch never breaks a session:
 
 The store command is the deliberate exception: when it is set and fails, resolution raises instead of degrading, because a silent fallback would write memory to the wrong store.
 
-`memory_compact` on a store directory not named `memory` is the other refusal: it raises naming the store and writes nothing, rather than degrading to a summary in the wrong directory.
+`memory_compact` on a store directory not named `memory` is the other refusal. It is checked before the backend is probed, so it raises naming the store even when `uv` is missing, rather than returning install instructions for a call that could never have written to the right place.
 
 Availability is re-probed with a short negative cache, so installing `uv` mid-session is picked up without a restart. Once the backend is back, the next index makes everything written in the meantime searchable.
 
