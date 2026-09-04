@@ -5,7 +5,8 @@
       "release-type": "node",
       "package-name": "pi-memsearch",
       "changelog-path": "CHANGELOG.md",
-      "draft": false,
+      "draft": true,
+      "force-tag-creation": true,
       "extra-files": [{ "type": "generic", "path": "README.md" }]
     }
   },

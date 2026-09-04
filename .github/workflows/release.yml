@@ -57,3 +57,17 @@ jobs:
       - run: npm install -g npm@latest
       # No build step: the package ships TypeScript source, so publishing needs no deps.
       - run: npm publish
+
+  # release-please cuts the release as a draft, so a failed npm publish leaves no
+  # release announcing a version the registry does not have. Needing `publish` is
+  # the whole gate: a skipped need skips this job too.
+  publish-release:
+    needs: [release-please, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
