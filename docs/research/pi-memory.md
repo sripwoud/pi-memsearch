@@ -1,6 +1,6 @@
 # pi-memory research (prior art for pi-memsearch)
 
-Primary source: `/home/sripwoud/code/pi-memory` @ v0.4.2 (`package.json:3`). All paths below are relative to that repo root.
+Primary source: `/home/user/code/pi-memory` @ v0.4.2 (`package.json:3`). All paths below are relative to that repo root.
 
 ## Summary
 

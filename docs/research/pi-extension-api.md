@@ -3,11 +3,11 @@
 Researched 2026-08-13 against pi v0.84.1 (= npm `latest` on this date, verified via `npm view`).
 
 Primary source: the pi-coding-agent package on this machine, cached by the `pi` launcher
-(`/home/sripwoud/.local/bin/pi` runs `npx --yes --prefer-online @earendil-works/pi-coding-agent`).
+(`/home/user/.local/bin/pi` runs `npx --yes --prefer-online @earendil-works/pi-coding-agent`).
 All local citations below are relative to that package root, abbreviated `$PI`:
 
 ```
-$PI = /home/sripwoud/.npm/_npx/99fca8174466655b/node_modules/@earendil-works/pi-coding-agent
+$PI = /home/user/.npm/_npx/99fca8174466655b/node_modules/@earendil-works/pi-coding-agent
 ```
 
 `$PI/dist/core/extensions/types.d.ts` is the API authority; `$PI/docs/*.md` are the shipped

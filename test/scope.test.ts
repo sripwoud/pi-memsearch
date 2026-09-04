@@ -15,7 +15,7 @@ const VECTORS: [path: string, collection: string][] = [
     '/data/a-very-long-project-directory-name-that-exceeds-forty-characters-limit',
     'ms_a_very_long_project_directory_name_that__381b27d3',
   ],
-  ['/home/sripwoud/code/pi-memsearch.3', 'ms_pi_memsearch_3_6f13ec91'],
+  ['/home/user/code/pi-memsearch.3', 'ms_pi_memsearch_3_a1b79a60'],
   ['/tmp/über-app', 'ms_ber_app_c7d538d4'],
 ]
 
