@@ -37,7 +37,7 @@ The working directory every memsearch child process runs at — the git root of 
 _Avoid_: repo root, git root, project directory, project root
 
 **Collection**:
-The per-project vector index derived from the memory store, named `ms_<name>_<hash>` by memsearch's derivation. Rebuildable at any time; never the source of truth.
+The per-project vector index derived from the memory store, named `ms_<name>_<hash>` by memsearch's derivation over the project scope — `$MEMSEARCH_DIR` included, because upstream treats an explicit override as global scope and moves the store and the collection together. Rebuildable at any time; never the source of truth.
 _Avoid_: database, index (when the derived Milvus collection is meant)
 
 **Index-state directory**:
