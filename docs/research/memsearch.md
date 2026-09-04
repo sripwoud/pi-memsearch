@@ -155,7 +155,7 @@ Env vars read by core: provider API keys (via SDKs), `env:` refs, and `MEMSEARCH
 
 Not in the Python package (grep at HEAD: no `ms_` derivation in `src/`); each plugin ships an identical `derive-collection.sh`. Algorithm to reimplement byte-for-byte (`plugins/claude-code/scripts/derive-collection.sh:16-50`):
 
-1. Project dir = `$MEMSEARCH_DIR` if explicitly set (global scope), else git root, else `CLAUDE_PROJECT_DIR`/cwd; resolve absolute (`plugins/claude-code/hooks/common.sh:29-42`, `plugins/claude-code/skills/memory-recall/SKILL.md:12`).
+1. Project dir = `$MEMSEARCH_DIR` if explicitly set (global scope), else git root, else `CLAUDE_PROJECT_DIR`/cwd; resolve absolute (`plugins/claude-code/hooks/common.sh:38-40,58-64`, `plugins/claude-code/skills/memory-recall/SKILL.md:12`). The explicit-override branch arrived in [`41ccae5`](https://github.com/zilliztech/memsearch/commit/41ccae51ed6df2a3c07e598b89dc89e3e27366e5) (2026-04-30, v0.4.17); before it both branches keyed to the project directory, so a checkout older than that reads as though the override never renames a collection.
 2. `sanitized` = basename → lowercase → `[^a-z0-9]`→`_` → collapse `__+`→`_` → strip edge `_` → first 40 chars.
 3. `hash` = first 8 hex of `sha256(absolute_path)` (no trailing newline: `printf '%s' | sha256sum`).
 4. `ms_${sanitized}_${hash}` — e.g. `/home/user/my-app` → `ms_my_app_a1b2c3d4`.
