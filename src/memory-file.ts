@@ -9,20 +9,29 @@ export interface MemoryEntry {
   transcriptPath: string
 }
 
+const headedSessions = new Set<string>()
+
 export function appendMemoryEntry(memoryDir: string, entry: MemoryEntry): string {
   const file = dailyFilePath(memoryDir, entry.timestamp)
   const time = formatTime(entry.timestamp)
-  const existing = existsSync(file) ? readFileSync(file, 'utf8') : ''
+  const key = `${file}\0${entry.sessionId}`
 
   let block = ''
-  if (!existing.includes(`session:${entry.sessionId}`)) block += `\n## Session ${time}\n\n`
+  if (!headedSessions.has(key) && !dailyFileHasSession(file, entry.sessionId))
+    block += `\n## Session ${time}\n\n`
   block += `### ${time}\n`
   block += `${formatSessionAnchor(entry)}\n`
   block += `${entry.content}\n\n`
 
   mkdirSync(memoryDir, { recursive: true })
   appendFileSync(file, block)
+  headedSessions.add(key)
   return file
+}
+
+function dailyFileHasSession(file: string, sessionId: string): boolean {
+  if (!existsSync(file)) return false
+  return readFileSync(file, 'utf8').includes(`session:${sessionId}`)
 }
 
 export function dailyFilePath(memoryDir: string, date: Date): string {

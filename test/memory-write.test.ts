@@ -1,6 +1,6 @@
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { equal, ok, rejects } from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -69,6 +69,49 @@ test('later writes in the same session reuse its heading', async () => {
       `### 22:55\n<!-- session:${SESSION.sessionId} turn:ab12cd34 transcript:${TRANSCRIPT} -->\n- second entry\n\n`,
     ),
   )
+})
+
+test('the heading decision is answered from process state, not a re-read of the daily memory file', async () => {
+  let minutes = 41
+  const { ctx, root, tool } = setup({ clock: () => new Date(2026, 7, 13, 22, minutes) })
+  const file = join(root, '.memsearch', 'memory', '2026-08-13.md')
+
+  await write(tool, ctx, '- first entry')
+  writeFileSync(file, readFileSync(file, 'utf8').replace(`session:${SESSION.sessionId}`, 'session:stripped'))
+  minutes = 55
+  await write(tool, ctx, '- second entry')
+
+  equal(readFileSync(file, 'utf8').match(/^## Session /gm)?.length, 1)
+})
+
+test('a resumed session already present in the daily memory file gets no second heading', async () => {
+  const { ctx, root, tool } = setup()
+  const memoryDir = join(root, '.memsearch', 'memory')
+  mkdirSync(memoryDir, { recursive: true })
+  const file = join(memoryDir, '2026-08-13.md')
+  writeFileSync(
+    file,
+    `\n## Session 09:00\n\n### 09:00\n<!-- session:${SESSION.sessionId} turn:99zz88yy transcript:${TRANSCRIPT} -->\n- written by the earlier process\n\n`,
+  )
+
+  await write(tool, ctx, '- written after the resume')
+
+  equal(readFileSync(file, 'utf8').match(/^## Session /gm)?.length, 1)
+})
+
+test('an append that fails records no heading, so the retry still writes one', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'memory-blocked-'))
+  const store = join(root, 'store')
+  writeFileSync(store, 'a file where the store directory belongs')
+  const { ctx, tool } = setup({ env: { MEMSEARCH_DIR: store } })
+
+  await rejects(() => write(tool, ctx, '- lost to a broken store'))
+
+  rmSync(store)
+  await write(tool, ctx, '- written once the store is usable')
+
+  const content = readFileSync(join(store, 'memory', '2026-08-13.md'), 'utf8')
+  equal(content.match(/^## Session /gm)?.length, 1)
 })
 
 test('a different session gets its own heading in the same daily file', async () => {

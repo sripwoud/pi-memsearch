@@ -164,4 +164,14 @@ The store command is the deliberate exception: when it is set and fails, resolut
 
 Availability is re-probed with a short negative cache, so installing `uv` mid-session is picked up without a restart. Once the backend is back, the next index makes everything written in the meantime searchable.
 
+Concurrent writers on one shared daily memory file — parallel worktree sessions, other mesh agents — are bounded, not serialized:
+
+| Outcome                                                         | Mechanism                                                                                                              |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Entries never interleave, and none goes missing                 | `appendFileSync` opens `O_APPEND`, and one entry is one small write                                                    |
+| A session never duplicates its own heading                      | The `## Session` decision is answered from process state, seeded by one read at that session's first write to the file |
+| A resumed session's first write can still duplicate its heading | A fresh process re-seeds by reading, and can lose the race with another writer at that instant                         |
+
+So the worst a race costs is a duplicate heading in the markdown, never a lost entry. A lock would only serialize anything if every writer took it, which makes it a convention to propose to the mesh rather than one pi adopts alone ([ADR 0001](adr/0001-mesh-parity.md)).
+
 `memory_status` reports what is missing, the active config, the index state — including memsearch's own `degraded` status and per-file failures — the chunk count, and the auto-context state with its counters.
