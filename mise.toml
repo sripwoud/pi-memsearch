@@ -29,8 +29,8 @@ run = "pi -e ./extensions/memsearch.ts"
 
 [tools]
 "cargo:convco" = "0.7.2"
-dprint = "0.57.1"
-hk = "1.57.0"
+dprint = "0.57.4"
+hk = "1.58.1"
 node = "24"
 "npm:@biomejs/biome" = "2.5.12"
 "npm:typescript" = "7.0.2"
